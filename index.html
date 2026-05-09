@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>経費管理システム - クラウド版</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📊</text></svg>">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.0/dist/tesseract.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Yu Gothic", Meiryo, sans-serif;
+    background: #f5f7fa;
+    color: #2c3e50;
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+  header {
+    background: linear-gradient(135deg, #1e3c72, #2a5298);
+    color: #fff;
+    padding: 20px 32px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  header h1 { font-size: 22px; font-weight: 600; }
+  header .subtitle { font-size: 12px; opacity: 0.85; margin-top: 2px; }
+  header .user {
+    display: flex; align-items: center; gap: 12px;
+    font-size: 13px;
+  }
+  header .user img {
+    width: 36px; height: 36px; border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.3);
+  }
+  header .user button {
+    background: rgba(255,255,255,0.15); color: #fff;
+    border: 1px solid rgba(255,255,255,0.3);
+    padding: 6px 12px; border-radius: 5px; cursor: pointer;
+    font-size: 12px;
+  }
+  header .user button:hover { background: rgba(255,255,255,0.25); }
+ 
+  nav {
+    background: #fff;
+    border-bottom: 1px solid #e1e8ed;
+    padding: 0 32px;
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+  }
+  nav button {
+    background: none; border: none;
+    padding: 14px 20px; cursor: pointer;
+    font-size: 14px; color: #5a6c7d;
+    border-bottom: 3px solid transparent;
+    transition: all 0.2s; font-weight: 500; white-space: nowrap;
+  }
+  nav button:hover { color: #1e3c72; }
+  nav button.active { color: #1e3c72; border-bottom-color: #2a5298; }
+ 
+  main { padding: 28px 32px; max-width: 1400px; margin: 0 auto; }
+  .view { display: none; }
+  .view.active { display: block; }
+ 
+  .card {
+    background: #fff; border-radius: 8px;
+    padding: 24px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    margin-bottom: 20px;
+  }
+  .card h2 {
+    font-size: 18px; margin-bottom: 16px;
+    color: #1e3c72;
+    padding-bottom: 12px;
+    border-bottom: 2px solid #f0f4f8;
+  }
+ 
+  .form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+  }
+  .form-group label {
+    display: block; font-size: 13px; font-weight: 600;
+    margin-bottom: 6px; color: #4a5568;
+  }
+  .form-group label .required { color: #e53e3e; margin-left: 2px; }
+  .form-group input, .form-group select, .form-group textarea {
+    width: 100%; padding: 9px 12px;
+    border: 1px solid #cbd5e0; border-radius: 6px;
+    font-size: 14px; font-family: inherit;
+    transition: border 0.2s;
+  }
+  .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+    outline: none; border-color: #2a5298;
+    box-shadow: 0 0 0 3px rgba(42,82,152,0.1);
+  }
+  .form-actions {
+    margin-top: 18px; display: flex; gap: 10px; justify-content: flex-end;
+  }
+ 
+  button.btn {
+    padding: 9px 18px; border-radius: 6px; border: none;
+    cursor: pointer; font-size: 14px; font-weight: 500;
+    transition: all 0.2s;
+  }
+  .btn-primary { background: #2a5298; color: #fff; }
+  .btn-primary:hover { background: #1e3c72; }
+  .btn-primary:disabled { background: #a0aec0; cursor: not-allowed; }
+  .btn-secondary { background: #e2e8f0; color: #2c3e50; }
+  .btn-secondary:hover { background: #cbd5e0; }
+  .btn-danger { background: #e53e3e; color: #fff; }
+  .btn-danger:hover { background: #c53030; }
+  .btn-success { background: #38a169; color: #fff; }
+  .btn-success:hover { background: #276749; }
+  .btn-sm { padding: 5px 10px; font-size: 12px; }
+ 
+  .filters {
+    display: flex; gap: 12px; align-items: center;
+    flex-wrap: wrap; margin-bottom: 16px;
+  }
+  .filters input, .filters select {
+    padding: 7px 10px; border: 1px solid #cbd5e0;
+    border-radius: 5px; font-size: 13px;
+  }
+ 
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { padding: 11px 12px; text-align: left; border-bottom: 1px solid #edf2f7; }
+  th {
+    background: #f7fafc; font-weight: 600;
+    color: #4a5568; font-size: 13px;
+    text-transform: uppercase; letter-spacing: 0.3px;
+  }
+  tr:hover td { background: #f7fafc; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  th.num { text-align: right; }
+  .empty {
+    text-align: center; padding: 40px 20px;
+    color: #a0aec0; font-size: 14px;
+  }
+ 
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 16px; margin-bottom: 20px;
+  }
+  .stat {
+    background: #fff; padding: 18px 20px;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    border-left: 4px solid #2a5298;
+  }
+  .stat .label { font-size: 12px; color: #718096; text-transform: uppercase; letter-spacing: 0.5px; }
+  .stat .value { font-size: 24px; font-weight: 700; margin-top: 6px; color: #1e3c72; }
+  .stat .sub { font-size: 12px; color: #a0aec0; margin-top: 4px; }
+  .stat.green { border-left-color: #38a169; }
+  .stat.green .value { color: #276749; }
+  .stat.amber { border-left-color: #dd6b20; }
+  .stat.amber .value { color: #9c4221; }
+  .stat.red { border-left-color: #e53e3e; }
+  .stat.red .value { color: #9b2c2c; }
+ 
+  .chart-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+  @media (max-width: 900px) { .chart-grid { grid-template-columns: 1fr; } }
+  .chart-box { position: relative; height: 320px; }
+ 
+  .badge {
+    display: inline-block; padding: 3px 9px;
+    border-radius: 12px; font-size: 11px;
+    font-weight: 600; background: #edf2f7; color: #4a5568;
+  }
+  .badge.auto { background: #c6f6d5; color: #276749; }
+ 
+  .toolbar {
+    display: flex; justify-content: space-between;
+    align-items: center; margin-bottom: 16px;
+    flex-wrap: wrap; gap: 12px;
+  }
+  .toolbar .actions { display: flex; gap: 8px; }
+  .toolbar h2 { font-size: 20px; color: #1e3c72; border: none; padding: 0; }
+ 
+  .toast {
+    position: fixed; bottom: 24px; right: 24px;
+    padding: 12px 20px; background: #2d3748; color: #fff;
+    border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    z-index: 1000; opacity: 0; transition: opacity 0.3s;
+    font-size: 14px; max-width: 360px;
+  }
+  .toast.show { opacity: 1; }
+  .toast.success { background: #2f855a; }
+  .toast.error { background: #c53030; }
+ 
+  .summary-table .total-row { background: #edf2f7; font-weight: 700; }
+  .summary-table .total-row td { border-top: 2px solid #2a5298; }
+ 
+  .help { font-size: 12px; color: #718096; margin-top: 6px; }
+ 
+  /* Login screen */
+  .login-screen {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #1e3c72, #2a5298);
+  }
+  .login-box {
+    background: #fff;
+    padding: 48px 40px;
+    border-radius: 12px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+    text-align: center;
+    max-width: 420px;
+    width: 90%;
+  }
+  .login-box h1 { font-size: 26px; color: #1e3c72; margin-bottom: 8px; }
+  .login-box .lead { color: #718096; font-size: 14px; margin-bottom: 32px; line-height: 1.7; }
+  .google-btn {
+    display: inline-flex; align-items: center; gap: 12px;
+    padding: 12px 24px;
+    background: #fff;
+    border: 1px solid #dadce0;
+    border-radius: 8px;
+    cursor: pointer; font-size: 14px; font-weight: 500;
+    color: #3c4043;
+    transition: all 0.2s;
+    width: 100%;
+    justify-content: center;
+  }
+  .google-btn:hover {
+    background: #f7fafc;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+  .google-btn img { width: 20px; height: 20px; }
+  .login-features {
+    margin-top: 32px;
+    text-align: left;
+    font-size: 13px;
+    color: #4a5568;
+  }
+  .login-features li {
+    padding: 6px 0;
+    list-style: none;
+    padding-left: 24px;
+    position: relative;
+  }
+  .login-features li:before {
+    content: "✓";
+    position: absolute;
+    left: 0;
+    color: #38a169;
+    font-weight: 700;
+  }
+  .config-warning {
+    background: #fef5e7;
+    border-left: 4px solid #dd6b20;
+    padding: 12px 16px;
+    border-radius: 4px;
+    margin-bottom: 20px;
+    font-size: 13px;
+    color: #744210;
+    text-align: left;
+  }
+  .config-warning strong { display: block; margin-bottom: 6px; color: #9c4221; }
+  .config-warning code {
+    background: #fffaf0;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 12px;
+    border: 1px solid #fbd38d;
+  }
+ 
+  /* OCR section */
+  .ocr-zone {
+    border: 2px dashed #cbd5e0;
+    border-radius: 8px;
+    padding: 24px;
+    text-align: center;
+    background: #f7fafc;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-bottom: 20px;
+  }
+  .ocr-zone:hover {
+    border-color: #2a5298;
+    background: #ebf4ff;
+  }
+  .ocr-zone.dragging {
+    border-color: #38a169;
+    background: #f0fff4;
+  }
+  .ocr-zone .icon {
+    font-size: 36px;
+    margin-bottom: 8px;
+  }
+  .ocr-zone .title {
+    font-size: 15px;
+    font-weight: 600;
+    color: #2c3e50;
+    margin-bottom: 4px;
+  }
+  .ocr-zone .desc {
+    font-size: 12px;
+    color: #718096;
+  }
+  .ocr-progress {
+    background: #ebf8ff;
+    border-radius: 6px;
+    padding: 14px 18px;
+    margin-bottom: 16px;
+    display: none;
+  }
+  .ocr-progress.show { display: block; }
+  .ocr-progress .label {
+    font-size: 13px;
+    color: #2c5282;
+    margin-bottom: 6px;
+    display: flex;
+    justify-content: space-between;
+  }
+  .ocr-progress .bar {
+    height: 6px;
+    background: #bee3f8;
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .ocr-progress .bar > div {
+    height: 100%;
+    background: #2a5298;
+    width: 0%;
+    transition: width 0.3s;
+  }
+  .ocr-result {
+    background: #f0fff4;
+    border: 1px solid #9ae6b4;
+    border-radius: 6px;
+    padding: 14px 16px;
+    margin-bottom: 16px;
+    display: none;
+  }
+  .ocr-result.show { display: block; }
+  .ocr-result .title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #276749;
+    margin-bottom: 8px;
+  }
+  .ocr-result .extracted {
+    font-size: 12px;
+    color: #4a5568;
+    background: #fff;
+    padding: 8px 10px;
+    border-radius: 4px;
+    max-height: 120px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    margin-bottom: 8px;
+    font-family: monospace;
+  }
+  .ocr-result .summary {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    font-size: 12px;
+  }
+  .ocr-result .summary span {
+    background: #fff;
+    padding: 4px 10px;
+    border-radius: 4px;
+    border: 1px solid #c6f6d5;
+  }
+  .ocr-result .summary span strong {
+    color: #276749;
+    margin-right: 4px;
+  }
+ 
+  .info-banner {
+    background: #ebf8ff;
+    border-left: 4px solid #2a5298;
+    padding: 10px 16px;
+    border-radius: 4px;
+    font-size: 13px;
+    color: #2c5282;
+    margin-bottom: 16px;
+  }
+ 
+  .sync-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: #38a169;
+    margin-left: 8px;
+  }
+  .sync-indicator .dot {
+    width: 6px; height: 6px;
+    background: #38a169;
+    border-radius: 50%;
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+ 
+  .loading-screen {
+    position: fixed;
+    inset: 0;
+    background: #f5f7fa;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 5000;
+    flex-direction: column;
+    gap: 20px;
+  }
+  .spinner {
+    width: 48px; height: 48px;
+    border: 4px solid #e2e8f0;
+    border-top-color: #2a5298;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+ 
+<!-- Loading screen -->
+<div id="loading" class="loading-screen">
+  <div class="spinner"></div>
+  <div style="color:#4a5568;font-size:14px;">読み込み中...</div>
+</div>
+ 
+<!-- Login screen -->
+<div id="login" class="login-screen" style="display:none;">
+  <div class="login-box">
+    <div id="configWarning" class="config-warning" style="display:none;">
+      <strong>⚠ Firebase設定が必要です</strong>
+      <code>firebase-config.js</code>を編集してFirebaseプロジェクトの設定情報を入力してください。詳しくはREADME.mdをご覧ください。
+    </div>
+    <h1>📊 経費管理システム</h1>
+    <p class="lead">小規模事業者向けクラウド経費管理<br>レシートをアップロードすると自動で仕分けします</p>
+    <button id="googleSignIn" class="google-btn">
+      <img src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" alt="">
+      Googleでログイン
+    </button>
+    <ul class="login-features">
+      <li>レシート画像から自動で勘定科目を仕分け</li>
+      <li>月次・年次集計とグラフダッシュボード</li>
+      <li>クラウド保存でどこからでもアクセス</li>
+      <li>CSVエクスポート対応</li>
+    </ul>
+  </div>
+</div>
+ 
+<!-- Main app -->
+<div id="app" style="display:none;">
+ 
+<header>
+  <div>
+    <h1>📊 経費管理システム</h1>
+    <div class="subtitle">クラウド版 - 自動仕分け対応</div>
+  </div>
+  <div class="user">
+    <span id="userName">-</span>
+    <img id="userPhoto" src="" alt="" style="display:none;">
+    <button id="signOutBtn">ログアウト</button>
+  </div>
+</header>
+ 
+<nav>
+  <button class="active" data-view="dashboard">ダッシュボード</button>
+  <button data-view="entry">経費入力 / OCR</button>
+  <button data-view="list">経費一覧</button>
+  <button data-view="summary">月次・年次集計</button>
+  <button data-view="settings">設定</button>
+</nav>
+ 
+<main>
+ 
+<!-- Dashboard -->
+<div class="view active" id="view-dashboard">
+  <div class="toolbar">
+    <h2>ダッシュボード <span class="sync-indicator"><span class="dot"></span>クラウド同期中</span></h2>
+    <div class="actions">
+      <select id="dashYear"></select>
+    </div>
+  </div>
+ 
+  <div class="stats">
+    <div class="stat">
+      <div class="label">今月の支出</div>
+      <div class="value" id="statThisMonth">¥0</div>
+      <div class="sub" id="statThisMonthSub">-</div>
+    </div>
+    <div class="stat green">
+      <div class="label">先月の支出</div>
+      <div class="value" id="statLastMonth">¥0</div>
+      <div class="sub" id="statLastMonthSub">-</div>
+    </div>
+    <div class="stat amber">
+      <div class="label">年間累計</div>
+      <div class="value" id="statYearTotal">¥0</div>
+      <div class="sub" id="statYearTotalSub">-</div>
+    </div>
+    <div class="stat red">
+      <div class="label">登録件数</div>
+      <div class="value" id="statCount">0</div>
+      <div class="sub">合計レコード</div>
+    </div>
+  </div>
+ 
+  <div class="chart-grid">
+    <div class="card">
+      <h2>月次推移(円)</h2>
+      <div class="chart-box"><canvas id="chartMonthly"></canvas></div>
+    </div>
+    <div class="card">
+      <h2>勘定科目別の構成</h2>
+      <div class="chart-box"><canvas id="chartCategory"></canvas></div>
+    </div>
+  </div>
+ 
+  <div class="card">
+    <h2>支払方法別の支出</h2>
+    <div class="chart-box" style="height:280px;"><canvas id="chartPayment"></canvas></div>
+  </div>
+</div>
+ 
+<!-- Entry -->
+<div class="view" id="view-entry">
+  <div class="card">
+    <h2 id="entryTitle">📷 レシート / 請求書から自動仕分け</h2>
+    <div class="info-banner">
+      レシートや請求書の画像をアップロードすると、Tesseract.js(ブラウザ内OCR)で文字を読み取り、日付・金額・取引先・勘定科目を自動で抽出・仕分けします。読み取った内容は下のフォームに反映されるので確認・修正してから登録できます。
+    </div>
+    <div class="ocr-zone" id="ocrZone">
+      <div class="icon">📥</div>
+      <div class="title">レシート画像をドラッグ&ドロップ または クリックして選択</div>
+      <div class="desc">対応形式: JPG / PNG / WebP (初回は日本語OCRデータ ~15MB をダウンロード)</div>
+      <input type="file" id="ocrFile" accept="image/*" style="display:none;">
+    </div>
+    <div class="ocr-progress" id="ocrProgress">
+      <div class="label"><span id="ocrLabel">処理中...</span><span id="ocrPercent">0%</span></div>
+      <div class="bar"><div id="ocrBar"></div></div>
+    </div>
+    <div class="ocr-result" id="ocrResult">
+      <div class="title">✓ OCR読み取り完了 - 内容を確認してください</div>
+      <div class="extracted" id="ocrText"></div>
+      <div class="summary" id="ocrSummary"></div>
+    </div>
+  </div>
+ 
+  <div class="card">
+    <h2>経費入力</h2>
+    <form id="entryForm">
+      <input type="hidden" id="entryId">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>日付<span class="required">*</span></label>
+          <input type="date" id="entryDate" required>
+        </div>
+        <div class="form-group">
+          <label>勘定科目<span class="required">*</span></label>
+          <select id="entryCategory" required></select>
+        </div>
+        <div class="form-group">
+          <label>取引先・店舗</label>
+          <input type="text" id="entryVendor" placeholder="例: ○○商事">
+        </div>
+        <div class="form-group">
+          <label>金額(税込・円)<span class="required">*</span></label>
+          <input type="number" id="entryAmount" required min="0" step="1" placeholder="0">
+        </div>
+        <div class="form-group">
+          <label>消費税(円)</label>
+          <input type="number" id="entryTax" min="0" step="1" placeholder="0">
+        </div>
+        <div class="form-group">
+          <label>支払方法</label>
+          <select id="entryPayment">
+            <option value="現金">現金</option>
+            <option value="法人カード">法人カード</option>
+            <option value="個人立替">個人立替</option>
+            <option value="銀行振込">銀行振込</option>
+            <option value="口座引落">口座引落</option>
+            <option value="電子マネー">電子マネー</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>担当者</label>
+          <input type="text" id="entryPerson" placeholder="例: 山田太郎">
+        </div>
+        <div class="form-group">
+          <label>領収書No.</label>
+          <input type="text" id="entryReceipt" placeholder="例: R-2026-001">
+        </div>
+        <div class="form-group" style="grid-column:1/-1;">
+          <label>摘要・備考</label>
+          <textarea id="entryMemo" rows="2" placeholder="例: 取引先との打ち合わせ"></textarea>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" id="entryReset">クリア</button>
+        <button type="submit" class="btn btn-primary" id="entrySubmit">登録する</button>
+      </div>
+    </form>
+  </div>
+</div>
+ 
+<!-- List -->
+<div class="view" id="view-list">
+  <div class="card">
+    <div class="toolbar">
+      <h2>経費一覧</h2>
+      <div class="actions">
+        <button class="btn btn-secondary btn-sm" id="exportCsv">CSVエクスポート</button>
+      </div>
+    </div>
+    <div class="filters">
+      <input type="text" id="filterText" placeholder="検索(取引先・摘要)">
+      <select id="filterMonth"><option value="">月: すべて</option></select>
+      <select id="filterCategory"><option value="">勘定科目: すべて</option></select>
+      <select id="filterPayment">
+        <option value="">支払方法: すべて</option>
+        <option value="現金">現金</option>
+        <option value="法人カード">法人カード</option>
+        <option value="個人立替">個人立替</option>
+        <option value="銀行振込">銀行振込</option>
+        <option value="口座引落">口座引落</option>
+        <option value="電子マネー">電子マネー</option>
+      </select>
+      <button class="btn btn-secondary btn-sm" id="clearFilter">フィルタ解除</button>
+      <span style="margin-left:auto;color:#718096;font-size:13px;" id="listCount"></span>
+    </div>
+    <div style="overflow-x:auto;">
+      <table>
+        <thead>
+          <tr>
+            <th>日付</th>
+            <th>勘定科目</th>
+            <th>取引先</th>
+            <th>摘要</th>
+            <th>支払方法</th>
+            <th>担当者</th>
+            <th class="num">税込金額</th>
+            <th class="num">うち消費税</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="listBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+ 
+<!-- Summary -->
+<div class="view" id="view-summary">
+  <div class="toolbar">
+    <h2>月次・年次集計</h2>
+    <div class="actions">
+      <select id="summaryYear"></select>
+    </div>
+  </div>
+ 
+  <div class="card">
+    <h2>年次サマリー(<span id="summaryYearLabel"></span>年)</h2>
+    <div class="stats">
+      <div class="stat">
+        <div class="label">年間支出合計</div>
+        <div class="value" id="sumYearTotal">¥0</div>
+      </div>
+      <div class="stat green">
+        <div class="label">月平均</div>
+        <div class="value" id="sumMonthAvg">¥0</div>
+      </div>
+      <div class="stat amber">
+        <div class="label">最大支出月</div>
+        <div class="value" id="sumMaxMonth" style="font-size:18px;">-</div>
+      </div>
+      <div class="stat red">
+        <div class="label">取引件数</div>
+        <div class="value" id="sumYearCount">0</div>
+      </div>
+    </div>
+  </div>
+ 
+  <div class="card">
+    <h2>勘定科目 × 月次マトリックス</h2>
+    <div style="overflow-x:auto;">
+      <table class="summary-table" id="summaryMatrix"></table>
+    </div>
+  </div>
+</div>
+ 
+<!-- Settings -->
+<div class="view" id="view-settings">
+  <div class="card">
+    <h2>勘定科目の設定</h2>
+    <div style="margin-bottom:16px;">
+      <input type="text" id="newCategory" placeholder="新しい勘定科目を追加" style="padding:8px 12px;border:1px solid #cbd5e0;border-radius:5px;width:240px;font-size:14px;">
+      <button class="btn btn-primary btn-sm" id="addCategory">追加</button>
+    </div>
+    <table>
+      <thead><tr><th>勘定科目</th><th style="width:120px;">操作</th></tr></thead>
+      <tbody id="categoryBody"></tbody>
+    </table>
+  </div>
+ 
+  <div class="card">
+    <h2>自動仕分けルール</h2>
+    <p style="font-size:13px;color:#718096;margin-bottom:14px;">
+      OCRで読み取ったテキストに以下のキーワードが含まれていると、対応する勘定科目に自動で仕分けされます。キーワードはカンマ区切りで複数指定できます。
+    </p>
+    <div id="rulesEditor"></div>
+    <div class="form-actions">
+      <button class="btn btn-secondary btn-sm" id="resetRules">デフォルトに戻す</button>
+      <button class="btn btn-primary" id="saveRules">仕分けルールを保存</button>
+    </div>
+  </div>
+ 
+  <div class="card">
+    <h2>会社情報</h2>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>会社名</label>
+        <input type="text" id="companyName" placeholder="株式会社○○">
+      </div>
+      <div class="form-group">
+        <label>会計年度開始月</label>
+        <select id="fiscalStart">
+          <option value="1">1月</option>
+          <option value="4" selected>4月</option>
+          <option value="7">7月</option>
+          <option value="10">10月</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-primary" id="saveSettings">設定を保存</button>
+    </div>
+  </div>
+</div>
+ 
+</main>
+ 
+<div id="toast" class="toast"></div>
+ 
+</div>
+ 
+<script type="module" src="./app.js"></script>
+</body>
+</html>
