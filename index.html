@@ -85,19 +85,17 @@
   }
 
   // ===== Gemini API =====
-  async function callGemini(parts, jsonMode=false) {
+  async function callGemini(parts) {
     const k = getKey();
     if (!k) throw new Error("APIキーが設定されていません");
     const body = {
       contents: [{parts}],
       generationConfig: {
         temperature: 0,
-        maxOutputTokens: 2000,
-        ...(jsonMode ? {responseMimeType:"application/json"} : {})
+        maxOutputTokens: 2000
       }
     };
-    // gemini-2.5-flash は thinking 無効化
-    body.thinkingConfig = {thinkingBudget: 0};
+
 
     const res = await fetch(
       "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key="+k,
@@ -162,10 +160,8 @@ Required JSON format:
   "confidence": 確信度0から1の小数
 }`;
 
-    // JSONモードで確実に返す
     const text = await callGemini(
-      [{inline_data:{mime_type:mime, data:b64}}, {text:prompt}],
-      true
+      [{inline_data:{mime_type:mime, data:b64}}, {text:prompt}]
     );
 
     setProgress("✨ データ確認中...", 85);
@@ -191,7 +187,7 @@ Required JSON format:
 Input: desc="${desc}" item="${item}" payee="${payee}" amount=${amount}yen taxRate=${rate}%
 Accounts: ${ACCS.map(a=>a.c+":"+a.n).join(",")}
 JSON: {"debit":"code","debitName":"name","credit":"code","creditName":"name","taxAmount":integer,"taxRate":integer,"confidence":float}`;
-      const text = await callGemini([{text:prompt}], true);
+      const text = await callGemini([{text:prompt}]);
       const m = text.match(/\{[\s\S]*\}/);
       return m ? JSON.parse(m[0]) : localJ(desc||item, amount, rate);
     } catch { return localJ(desc||item, amount, rate); }
