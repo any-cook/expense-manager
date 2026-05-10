@@ -74,7 +74,7 @@
   }
   async function callGemini(parts){
     const key=getApiKey();if(!key)throw new Error("APIキーが設定されていません");
-    const url="https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key="+key;
+    const url="https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key="+key;
     const res=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({contents:[{parts}],generationConfig:{temperature:0.1,maxOutputTokens:1000}})});
     if(!res.ok){const e=await res.json().catch(()=>({}));throw new Error(e?.error?.message||"APIエラー("+res.status+")");}
