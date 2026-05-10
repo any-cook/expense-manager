@@ -85,22 +85,24 @@
   }
 
   // ===== Gemini API =====
-  async function callGemini(parts) {
+  async function callGemini(parts, retry=0) {
     const k = getKey();
     if (!k) throw new Error("APIキーが設定されていません");
     const body = {
       contents: [{parts}],
-      generationConfig: {
-        temperature: 0,
-        maxOutputTokens: 2000
-      }
+      generationConfig: { temperature: 0, maxOutputTokens: 2000 }
     };
-
-
     const res = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key="+k,
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key="+k,
       {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)}
     );
+    if (res.status === 503 || res.status === 429) {
+      if (retry < 3) {
+        setProgress("⏳ 混雑中..." + (retry+1) + "回目リトライ", 30 + retry*15);
+        await new Promise(r => setTimeout(r, 3000 * (retry+1)));
+        return callGemini(parts, retry+1);
+      }
+    }
     if (!res.ok) {
       const e = await res.json().catch(()=>({}));
       const msg = e?.error?.message || "APIエラー("+res.status+")";
@@ -166,15 +168,17 @@ Required JSON format:
 
     setProgress("✨ データ確認中...", 85);
 
-    // JSONパース（複数の方法で試みる）
-    let parsed;
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      // フォールバック：テキストからJSON部分を抽出
-      const m = text.match(/\{[\s\S]*\}/);
-      if (!m) throw new Error("レシートの内容を読み取れませんでした。別の写真をお試しください。");
-      parsed = JSON.parse(m[0]);
+    // JSONパース（コードブロック除去→複数方法で試みる）
+    let clean = text.replace(/```json\s*/gi,"").replace(/```\s*/g,"").trim();
+    let parsed = null;
+    try { parsed = JSON.parse(clean); } catch {}
+    if (!parsed) {
+      const m = clean.match(/\{[\s\S]*\}/);
+      if (m) { try { parsed = JSON.parse(m[0]); } catch {} }
+    }
+    if (!parsed) {
+      console.error("Gemini raw response:", text);
+      throw new Error("読み取りに失敗しました。鮮明な写真でお試しください。");
     }
     return parsed;
   }
@@ -507,7 +511,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:rgba(74,143,255,.06)}
 <header>
   <div>
     <div class="logo">📒 経費管理システム</div>
-    <div class="logo-sub">✨ AI自動仕訳 ・ レシート読み取り ・ インボイス対応（Google Gemini 無料）</div>
+    <div class="logo-sub">✨ AI自動仕訳 ・ レシート読み取り ・ インボイス対応（Google Gemini 無料・Flash-Lite）</div>
     <div id="api-status" style="font-size:12px;margin-top:4px;font-weight:800"></div>
   </div>
   <div style="font-size:11px;color:#7eb8ff;font-family:monospace"><span id="api-key-disp"></span></div>
