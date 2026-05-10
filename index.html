@@ -3,14 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>⚖ KeiHi Pro - AI経費仕訳システム</title>
+<title>経費管理システム</title>
 
 <script type="module">
   import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
   import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, updateDoc, query, orderBy }
     from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
-  // ===== Firebase設定 =====
   const firebaseConfig = {
     apiKey: "AIzaSyBsW7S7lx1XO0K_4qcbVhnLm1cV_ls3yQA",
     authDomain: "expense-manager-7e9b1.firebaseapp.com",
@@ -21,455 +20,471 @@
     appId: "1:953669522525:web:252849bda34ed998f029b4"
   };
 
-  // ===== Anthropic APIキー =====
-  // ★★★ 下の sk-ant-... を自分のAPIキーに書き換えてください ★★★
-  const ANTHROPIC_API_KEY = "sk-ant-8299";
+  // ★★★ Anthropic APIキーをここに入力 ★★★
+  const ANTHROPIC_API_KEY = "sk-ant-ここにAPIキーを入力";
 
   const app = initializeApp(firebaseConfig);
   const db  = getFirestore(app);
 
-  // ===== 勘定科目マスタ =====
   const ACCOUNTS = [
     {code:"1001",name:"現金"},{code:"1002",name:"普通預金"},
     {code:"2001",name:"買掛金"},{code:"2101",name:"未払金"},
     {code:"4001",name:"売上高"},{code:"5001",name:"仕入高"},
     {code:"6001",name:"給与手当"},{code:"6101",name:"交通費"},
-    {code:"6102",name:"旅費交通費"},{code:"6201",name:"通信費"},
-    {code:"6202",name:"接待交際費"},{code:"6203",name:"広告宣伝費"},
-    {code:"6204",name:"消耗品費"},{code:"6205",name:"水道光熱費"},
-    {code:"6206",name:"地代家賃"},{code:"6207",name:"保険料"},
-    {code:"6208",name:"修繕費"},{code:"6301",name:"会議費"},
+    {code:"6102",name:"旅費交通費"},{code:"6103",name:"車両費"},
+    {code:"6201",name:"通信費"},{code:"6202",name:"接待交際費"},
+    {code:"6203",name:"広告宣伝費"},{code:"6204",name:"消耗品費"},
+    {code:"6205",name:"水道光熱費"},{code:"6206",name:"地代家賃"},
+    {code:"6207",name:"保険料"},{code:"6208",name:"修繕費"},
+    {code:"6209",name:"減価償却費"},{code:"6301",name:"会議費"},
     {code:"6302",name:"新聞図書費"},{code:"6303",name:"支払手数料"},
     {code:"6401",name:"租税公課"},{code:"6501",name:"雑費"},
   ];
 
-  // ===== ローカル自動仕訳ルール =====
+  function generateInvoiceNo() {
+    const now = new Date();
+    const ymd = now.getFullYear().toString().slice(2)
+      + String(now.getMonth()+1).padStart(2,"0")
+      + String(now.getDate()).padStart(2,"0");
+    return `INV-${ymd}-${String(Math.floor(Math.random()*9000)+1000)}`;
+  }
+
+  function calcTax(amount, rate) {
+    if (!rate || rate === 0) return 0;
+    const r = rate === 8 ? 108 : 110;
+    return Math.round(amount - Math.round(amount * 100 / r));
+  }
+
   const RULES = [
-    {kw:["タクシー","電車","バス","新幹線","飛行機","交通"],db:"6101",cr:"1001"},
-    {kw:["ホテル","宿泊","出張"],db:"6102",cr:"1001"},
-    {kw:["電話","携帯","インターネット","通信"],db:"6201",cr:"2101"},
-    {kw:["接待","飲食","会食","レストラン","居酒屋"],db:"6202",cr:"1001"},
-    {kw:["広告","宣伝","PR"],db:"6203",cr:"2101"},
-    {kw:["文房具","消耗品","コピー用紙","事務用品"],db:"6204",cr:"1001"},
-    {kw:["電気","ガス","水道","光熱"],db:"6205",cr:"2101"},
-    {kw:["家賃","賃料","地代","駐車場"],db:"6206",cr:"2101"},
-    {kw:["保険"],db:"6207",cr:"2101"},
-    {kw:["修繕","修理"],db:"6208",cr:"1001"},
-    {kw:["会議","打合せ","ミーティング"],db:"6301",cr:"1001"},
-    {kw:["本","雑誌","書籍"],db:"6302",cr:"1001"},
-    {kw:["手数料","振込"],db:"6303",cr:"1002"},
-    {kw:["給与","給料","賞与"],db:"6001",cr:"1001"},
-    {kw:["仕入","材料","購入"],db:"5001",cr:"2001"},
+    {kw:["タクシー","電車","バス","新幹線","飛行機","交通","切符","定期"],db:"6101",cr:"1001",rate:10},
+    {kw:["ガソリン","燃料","駐車","高速","車検","洗車","車両"],db:"6103",cr:"1001",rate:10},
+    {kw:["ホテル","宿泊","出張"],db:"6102",cr:"1001",rate:10},
+    {kw:["電話","携帯","インターネット","通信"],db:"6201",cr:"2101",rate:10},
+    {kw:["接待","飲食","会食","レストラン","居酒屋","ランチ","食事"],db:"6202",cr:"1001",rate:10},
+    {kw:["広告","宣伝","PR","チラシ"],db:"6203",cr:"2101",rate:10},
+    {kw:["文房具","消耗品","コピー用紙","事務用品"],db:"6204",cr:"1001",rate:10},
+    {kw:["電気","ガス","水道","光熱"],db:"6205",cr:"2101",rate:10},
+    {kw:["家賃","賃料","地代","駐車場"],db:"6206",cr:"2101",rate:10},
+    {kw:["保険"],db:"6207",cr:"2101",rate:10},
+    {kw:["修繕","修理","メンテ"],db:"6208",cr:"1001",rate:10},
+    {kw:["会議","打合せ","ミーティング"],db:"6301",cr:"1001",rate:10},
+    {kw:["本","雑誌","書籍","新聞"],db:"6302",cr:"1001",rate:8},
+    {kw:["手数料","振込"],db:"6303",cr:"1002",rate:10},
+    {kw:["給与","給料","賞与"],db:"6001",cr:"1001",rate:0},
+    {kw:["仕入","材料","食材"],db:"5001",cr:"2001",rate:8},
   ];
 
-  function localJournal(desc, amount) {
+  function localJournal(desc, amount, rate) {
     for (const r of RULES) {
       if (r.kw.some(k => desc.includes(k))) {
+        const taxRate = (rate !== undefined && rate !== null) ? rate : r.rate;
         return {
-          debit: r.db,
-          debitName: ACCOUNTS.find(a=>a.code===r.db)?.name || "雑費",
-          credit: r.cr,
-          creditName: ACCOUNTS.find(a=>a.code===r.cr)?.name || "現金",
-          taxAmount: Math.round(amount / 11),
-          confidence: 0.85
+          debit: r.db, debitName: ACCOUNTS.find(a=>a.code===r.db)?.name||"雑費",
+          credit: r.cr, creditName: ACCOUNTS.find(a=>a.code===r.cr)?.name||"現金",
+          taxRate, taxAmount: calcTax(amount, taxRate), confidence: 0.85
         };
       }
     }
-    return {debit:"6501",debitName:"雑費",credit:"1001",creditName:"現金",taxAmount:0,confidence:0.5};
+    const taxRate = rate ?? 10;
+    return {debit:"6501",debitName:"雑費",credit:"1001",creditName:"現金",
+      taxRate, taxAmount: calcTax(amount, taxRate), confidence: 0.5};
   }
 
-  // ===== AI自動仕訳 =====
-  async function aiJournal(desc, amount) {
+  async function aiJournal(desc, item, payee, amount, rate) {
     if (!ANTHROPIC_API_KEY || ANTHROPIC_API_KEY.includes("ここに")) {
-      return localJournal(desc, amount);
+      return localJournal(desc||item, amount, rate);
     }
     try {
       const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+        method:"POST",
+        headers:{
+          "Content-Type":"application/json",
           "x-api-key": ANTHROPIC_API_KEY,
-          "anthropic-version": "2023-06-01",
-          "anthropic-dangerous-direct-browser-access": "true"
+          "anthropic-version":"2023-06-01",
+          "anthropic-dangerous-direct-browser-access":"true"
         },
         body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 500,
-          messages: [{
-            role: "user",
-            content: `経費仕訳をJSONのみで回答してください。\n摘要:${desc}\n金額:${amount}円\n利用可能科目:${ACCOUNTS.map(a=>a.code+":"+a.name).join(",")}\n形式(JSONのみ):{"debit":"コード","debitName":"名","credit":"コード","creditName":"名","taxAmount":数値,"confidence":0から1}`
+          model:"claude-sonnet-4-20250514", max_tokens:500,
+          messages:[{role:"user", content:
+            `日本の会計基準で経費仕訳をJSONのみで回答。\n摘要:${desc||""}\n品目:${item||""}\n支払先:${payee||""}\n金額:${amount}円\n消費税率:${rate}%\n利用可能科目:${ACCOUNTS.map(a=>a.code+":"+a.name).join(",")}\nJSONのみ(コードブロックなし):{"debit":"コード","debitName":"名","credit":"コード","creditName":"名","taxAmount":数値,"taxRate":数値,"confidence":0-1}`
           }]
         })
       });
       const data = await res.json();
-      const text = data.content?.map(c=>c.text||"").join("") || "";
-      const parsed = JSON.parse(text.replace(/```json|```/g,"").trim());
-      return parsed;
+      const text = data.content?.map(c=>c.text||"").join("")||"";
+      return JSON.parse(text.replace(/```json|```/g,"").trim());
     } catch {
-      return localJournal(desc, amount);
+      return localJournal(desc||item, amount, rate);
     }
   }
 
-  // ===== CSV出力 =====
   function exportCSV(journals, fmt) {
     const bom = "\uFEFF";
     let content = "";
-    if (fmt === "汎用") {
-      content = "日付,摘要,借方科目,貸方科目,金額,消費税額\n"
-        + journals.map(j=>`${j.date},"${j.desc}",${j.debitName},${j.creditName},${j.amount},${j.taxAmount||0}`).join("\n");
-    } else if (fmt === "弥生") {
-      content = "識別フラグ,伝票日付,借方勘定科目,借方税区分,借方金額,借方消費税額,貸方勘定科目,貸方金額,摘要\n"
-        + journals.map(j=>`2000,${j.date.replace(/-/g,"/")},,${j.debitName},課税仕入10%,${j.amount},${j.taxAmount||0},${j.creditName},${j.amount},"${j.desc}"`).join("\n");
-    } else if (fmt === "freee") {
-      content = "発生日,勘定科目,金額（円）,税区分,備考\n"
-        + journals.map(j=>`${j.date},${j.debitName},${j.amount},課税仕入(10%),"${j.desc}"`).join("\n");
-    } else if (fmt === "MF") {
-      content = "取引日,借方勘定科目,借方税区分,借方金額,貸方勘定科目,貸方金額,摘要\n"
-        + journals.map(j=>`${j.date},${j.debitName},10%,${j.amount},${j.creditName},${j.amount},"${j.desc}"`).join("\n");
+    if (fmt==="汎用") {
+      content = "インボイス番号,日付,支払先,摘要,品目・内容,借方科目,貸方科目,税込金額,消費税率,消費税額\n"
+        + journals.map(j=>`${j.invoiceNo||""},${j.date},"${j.payee||""}","${j.desc||""}","${j.item||""}",${j.debitName},${j.creditName},${j.amount},${j.taxRate||10}%,${j.taxAmount||0}`).join("\n");
+    } else if (fmt==="弥生") {
+      content = "識別フラグ,伝票日付,借方勘定科目,借方税区分,借方金額,借方消費税額,貸方勘定科目,貸方金額,摘要,インボイス番号\n"
+        + journals.map(j=>`2000,${j.date.replace(/-/g,"/")},,${j.debitName},課税仕入${j.taxRate||10}%,${j.amount},${j.taxAmount||0},${j.creditName},${j.amount},"${j.desc||""}",${j.invoiceNo||""}`).join("\n");
+    } else if (fmt==="freee") {
+      content = "発生日,勘定科目,支払先,金額（円）,税区分,備考,インボイス番号\n"
+        + journals.map(j=>`${j.date},${j.debitName},"${j.payee||""}",${j.amount},課税仕入(${j.taxRate||10}%),"${j.desc||""}",${j.invoiceNo||""}`).join("\n");
+    } else if (fmt==="MF") {
+      content = "取引日,借方勘定科目,借方税区分,借方金額,貸方勘定科目,貸方金額,摘要,インボイス番号\n"
+        + journals.map(j=>`${j.date},${j.debitName},${j.taxRate||10}%,${j.amount},${j.creditName},${j.amount},"${j.desc||""}",${j.invoiceNo||""}`).join("\n");
     }
-    const blob = new Blob([bom+content], {type:"text/csv;charset=utf-8;"});
+    const blob = new Blob([bom+content],{type:"text/csv;charset=utf-8;"});
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = `仕訳_${fmt}_${new Date().toISOString().slice(0,10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(a.href);
+    a.download = `経費仕訳_${fmt}_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click(); URL.revokeObjectURL(a.href);
   }
 
-  // ===== アプリ状態 =====
-  let journals = [];
-  let editId   = null;
+  let journals=[], editId=null;
 
-  // ===== Firestore操作 =====
   async function loadJournals() {
-    showNotify("データ読込中...", "info");
+    showNotify("データ読込中...","info");
     try {
       const q = query(collection(db,"journals"), orderBy("createdAt","desc"));
       const snap = await getDocs(q);
       journals = snap.docs.map(d=>({id:d.id,...d.data()}));
-      showNotify("読込完了（"+journals.length+"件）", "success");
-    } catch(e) {
-      console.warn("Firestore読込失敗、ローカル使用:", e);
+      showNotify(`読込完了（${journals.length}件）`,"success");
+    } catch {
       journals = JSON.parse(localStorage.getItem("keihi_journals")||"[]");
-      showNotify("ローカルデータを読込みました", "info");
+      showNotify("ローカルデータを使用","info");
     }
-    renderList();
-    updateStats();
+    renderList(); updateStats();
   }
 
   async function saveJournal(j) {
     try {
-      if (j.id && j.id !== "local") {
-        const {id, ...data} = j;
-        await updateDoc(doc(db,"journals",id), data);
-      } else {
-        j.createdAt = new Date().toISOString();
-        const {id, ...data} = j;
-        const ref = await addDoc(collection(db,"journals"), data);
-        j.id = ref.id;
-      }
-    } catch(e) {
-      console.warn("Firestore保存失敗、ローカル使用:", e);
-      if (!j.id || j.id === "local") j.id = "local_" + Date.now();
-      const local = JSON.parse(localStorage.getItem("keihi_journals")||"[]");
-      const idx = local.findIndex(l=>l.id===j.id);
-      if (idx >= 0) local[idx] = j; else local.unshift(j);
-      localStorage.setItem("keihi_journals", JSON.stringify(local));
+      if (j.id) { const {id,...d}=j; await updateDoc(doc(db,"journals",id),d); }
+      else { j.createdAt=new Date().toISOString(); const {id,...d}=j; const ref=await addDoc(collection(db,"journals"),d); j.id=ref.id; }
+    } catch {
+      if (!j.id) j.id="local_"+Date.now();
+      const local=JSON.parse(localStorage.getItem("keihi_journals")||"[]");
+      const idx=local.findIndex(l=>l.id===j.id);
+      if(idx>=0) local[idx]=j; else local.unshift(j);
+      localStorage.setItem("keihi_journals",JSON.stringify(local));
     }
     return j;
   }
 
   async function removeJournal(id) {
+    if (!confirm("この仕訳を削除しますか？")) return;
     try { await deleteDoc(doc(db,"journals",id)); } catch {}
-    const local = JSON.parse(localStorage.getItem("keihi_journals")||"[]");
-    localStorage.setItem("keihi_journals", JSON.stringify(local.filter(j=>j.id!==id)));
-    journals = journals.filter(j=>j.id!==id);
-    renderList();
-    updateStats();
-    showNotify("削除しました");
+    const local=JSON.parse(localStorage.getItem("keihi_journals")||"[]");
+    localStorage.setItem("keihi_journals",JSON.stringify(local.filter(j=>j.id!==id)));
+    journals=journals.filter(j=>j.id!==id);
+    renderList(); updateStats(); showNotify("削除しました");
   }
 
-  // ===== UI =====
-  function showNotify(msg, type="success") {
-    const el = document.getElementById("notify");
-    el.textContent = msg;
-    el.className = "notify show " + type;
-    clearTimeout(el._t);
-    el._t = setTimeout(()=>el.classList.remove("show"), 3000);
+  function showNotify(msg,type="success") {
+    const el=document.getElementById("notify");
+    el.textContent=msg; el.className="notify show "+type;
+    clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove("show"),3000);
   }
 
   function switchTab(t) {
-    document.querySelectorAll(".tab-btn").forEach(b=>b.classList.toggle("active", b.dataset.tab===t));
-    document.querySelectorAll(".tab-panel").forEach(p=>p.classList.toggle("active", p.id==="panel-"+t));
-    if (t==="list" || t==="export") { renderList(); updateStats(); }
+    document.querySelectorAll(".tab-btn").forEach(b=>b.classList.toggle("active",b.dataset.tab===t));
+    document.querySelectorAll(".tab-panel").forEach(p=>p.classList.toggle("active",p.id==="panel-"+t));
+    if(t==="list"||t==="export"){ renderList(); updateStats(); }
   }
 
   function updateStats() {
-    const total = journals.reduce((s,j)=>s+Number(j.amount||0),0);
-    const tax   = journals.reduce((s,j)=>s+Number(j.taxAmount||0),0);
+    const j10=journals.filter(j=>Number(j.taxRate||10)===10);
+    const j8 =journals.filter(j=>Number(j.taxRate||10)===8);
+    const total10=j10.reduce((s,j)=>s+Number(j.amount||0),0);
+    const total8 =j8.reduce((s,j)=>s+Number(j.amount||0),0);
+    const tax10  =j10.reduce((s,j)=>s+Number(j.taxAmount||0),0);
+    const tax8   =j8.reduce((s,j)=>s+Number(j.taxAmount||0),0);
+    const totalAll=total10+total8, taxAll=tax10+tax8;
     document.querySelectorAll(".stat-count").forEach(el=>el.textContent=journals.length+"件");
-    document.querySelectorAll(".stat-amount").forEach(el=>el.textContent="¥"+total.toLocaleString());
-    document.querySelectorAll(".stat-tax").forEach(el=>el.textContent="¥"+tax.toLocaleString());
+    document.querySelectorAll(".stat-total").forEach(el=>el.textContent="¥"+totalAll.toLocaleString());
+    document.querySelectorAll(".stat-tax").forEach(el=>el.textContent="¥"+taxAll.toLocaleString());
+    document.querySelectorAll(".stat-10").forEach(el=>el.textContent=`¥${total10.toLocaleString()}（税額 ¥${tax10.toLocaleString()}）`);
+    document.querySelectorAll(".stat-8").forEach(el=>el.textContent=`¥${total8.toLocaleString()}（税額 ¥${tax8.toLocaleString()}）`);
   }
 
   function renderList() {
-    const tbody = document.getElementById("journal-tbody");
+    const tbody=document.getElementById("journal-tbody");
     if (!journals.length) {
-      tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:#888;padding:48px;font-size:14px">仕訳データがありません。「入力」タブから登録してください。</td></tr>`;
+      tbody.innerHTML=`<tr><td colspan="10" style="text-align:center;color:#666;padding:48px;font-size:14px">データがありません。「入力」タブから登録してください。</td></tr>`;
       return;
     }
-    tbody.innerHTML = journals.map(j=>`
+    tbody.innerHTML=journals.map(j=>`
       <tr>
-        <td>${j.date||""}</td>
-        <td title="${j.desc||""}">${(j.desc||"").length>18?(j.desc||"").slice(0,18)+"…":(j.desc||"")}</td>
+        <td><span class="inv-no">${j.invoiceNo||"-"}</span></td>
+        <td style="white-space:nowrap">${j.date||""}</td>
+        <td>${(j.payee||"-").length>10?(j.payee).slice(0,10)+"…":(j.payee||"-")}</td>
+        <td>${(j.desc||"-").length>12?(j.desc).slice(0,12)+"…":(j.desc||"-")}</td>
+        <td>${(j.item||"-").length>12?(j.item).slice(0,12)+"…":(j.item||"-")}</td>
         <td><span class="badge blue">${j.debitName||""}</span></td>
         <td><span class="badge green">${j.creditName||""}</span></td>
         <td class="num">¥${Number(j.amount||0).toLocaleString()}</td>
-        <td class="num">¥${Number(j.taxAmount||0).toLocaleString()}</td>
-        <td>
+        <td class="num">
+          <span class="badge ${Number(j.taxRate||10)===8?'orange':'purple'}">${j.taxRate||10}%</span>
+          <div style="margin-top:2px">¥${Number(j.taxAmount||0).toLocaleString()}</div>
+        </td>
+        <td style="white-space:nowrap">
           <button class="btn-sm" onclick="startEdit('${j.id}')">編集</button>
-          <button class="btn-sm del" onclick="if(confirm('削除しますか？'))removeJournal('${j.id}')">削除</button>
+          <button class="btn-sm del" onclick="removeJournal('${j.id}')">削除</button>
         </td>
       </tr>`).join("");
   }
 
-  // ===== グローバル関数 =====
-  window.removeJournal = removeJournal;
-
-  window.startEdit = function(id) {
-    const j = journals.find(x=>x.id===id);
-    if (!j) return;
-    editId = id;
-    document.getElementById("f-date").value   = j.date||"";
-    document.getElementById("f-desc").value   = j.desc||"";
-    document.getElementById("f-amount").value = j.amount||"";
-    document.getElementById("f-debit").value  = j.debit||"";
-    document.getElementById("f-credit").value = j.credit||"";
-    document.getElementById("f-tax").value    = j.taxAmount||0;
-    document.getElementById("edit-label").textContent = "✏️ 仕訳編集中";
-    document.getElementById("cancel-btn").style.display = "inline-flex";
-    switchTab("input");
-    window.scrollTo(0,0);
+  window.removeJournal=removeJournal;
+  window.startEdit=function(id){
+    const j=journals.find(x=>x.id===id); if(!j) return;
+    editId=id;
+    document.getElementById("f-invoice").value =j.invoiceNo||"";
+    document.getElementById("f-date").value    =j.date||"";
+    document.getElementById("f-payee").value   =j.payee||"";
+    document.getElementById("f-desc").value    =j.desc||"";
+    document.getElementById("f-item").value    =j.item||"";
+    document.getElementById("f-amount").value  =j.amount||"";
+    document.getElementById("f-taxrate").value =j.taxRate||10;
+    document.getElementById("f-tax").value     =j.taxAmount||0;
+    document.getElementById("f-debit").value   =j.debit||"";
+    document.getElementById("f-credit").value  =j.credit||"";
+    document.getElementById("edit-label").textContent="✏️ 仕訳編集中";
+    document.getElementById("cancel-btn").style.display="inline-flex";
+    switchTab("input"); window.scrollTo(0,0);
   };
-
-  window.cancelEdit = function() {
-    editId = null;
+  window.cancelEdit=function(){
+    editId=null;
     document.getElementById("journal-form").reset();
-    document.getElementById("f-date").value = new Date().toISOString().slice(0,10);
-    document.getElementById("edit-label").textContent = "📝 経費入力";
-    document.getElementById("cancel-btn").style.display = "none";
-    document.getElementById("ai-result").style.display = "none";
+    document.getElementById("f-date").value   =new Date().toISOString().slice(0,10);
+    document.getElementById("f-invoice").value=generateInvoiceNo();
+    document.getElementById("f-taxrate").value=10;
+    document.getElementById("f-tax").value    =0;
+    document.getElementById("edit-label").textContent="📝 経費入力";
+    document.getElementById("cancel-btn").style.display="none";
+    document.getElementById("ai-result").style.display="none";
   };
 
-  // AI自動仕訳ボタン
-  document.getElementById("ai-btn").addEventListener("click", async () => {
-    const desc   = document.getElementById("f-desc").value.trim();
-    const amount = parseInt(document.getElementById("f-amount").value)||0;
-    if (!desc || !amount) { showNotify("摘要と金額を入力してください","error"); return; }
-    const btn = document.getElementById("ai-btn");
-    btn.textContent = "⏳ AI判定中...";
-    btn.disabled = true;
-    const r = await aiJournal(desc, amount);
-    btn.textContent = "🤖 AI自動仕訳";
-    btn.disabled = false;
-    document.getElementById("f-debit").value  = r.debit||"6501";
-    document.getElementById("f-credit").value = r.credit||"1001";
-    document.getElementById("f-tax").value    = r.taxAmount||0;
-    document.getElementById("ai-result").style.display = "block";
-    document.getElementById("ai-debit").textContent  = r.debitName||"";
-    document.getElementById("ai-credit").textContent = r.creditName||"";
-    document.getElementById("ai-conf").textContent   = Math.round((r.confidence||0)*100)+"%";
+  function recalcTax(){
+    const amount=parseInt(document.getElementById("f-amount").value)||0;
+    const rate=parseInt(document.getElementById("f-taxrate").value)||10;
+    document.getElementById("f-tax").value=calcTax(amount,rate);
+  }
+  document.getElementById("f-amount").addEventListener("input",recalcTax);
+  document.getElementById("f-taxrate").addEventListener("change",recalcTax);
+
+  document.getElementById("ai-btn").addEventListener("click",async()=>{
+    const desc  =document.getElementById("f-desc").value.trim();
+    const item  =document.getElementById("f-item").value.trim();
+    const payee =document.getElementById("f-payee").value.trim();
+    const amount=parseInt(document.getElementById("f-amount").value)||0;
+    const rate  =parseInt(document.getElementById("f-taxrate").value)||10;
+    if(!desc&&!item){showNotify("摘要または品目を入力してください","error");return;}
+    if(!amount){showNotify("金額を入力してください","error");return;}
+    const btn=document.getElementById("ai-btn");
+    btn.textContent="⏳ AI判定中..."; btn.disabled=true;
+    const r=await aiJournal(desc,item,payee,amount,rate);
+    btn.textContent="🤖 AI自動仕訳"; btn.disabled=false;
+    document.getElementById("f-debit").value =r.debit||"6501";
+    document.getElementById("f-credit").value=r.credit||"1001";
+    document.getElementById("f-tax").value   =r.taxAmount||calcTax(amount,rate);
+    if(r.taxRate) document.getElementById("f-taxrate").value=r.taxRate;
+    document.getElementById("ai-result").style.display="block";
+    document.getElementById("ai-debit").textContent =r.debitName||"";
+    document.getElementById("ai-credit").textContent=r.creditName||"";
+    document.getElementById("ai-conf").textContent  =Math.round((r.confidence||0)*100)+"%";
   });
 
-  // 登録フォーム
-  document.getElementById("journal-form").addEventListener("submit", async e => {
+  document.getElementById("journal-form").addEventListener("submit",async e=>{
     e.preventDefault();
-    const debitCode  = document.getElementById("f-debit").value;
-    const creditCode = document.getElementById("f-credit").value;
-    const j = {
-      id:         editId||null,
-      date:       document.getElementById("f-date").value,
-      desc:       document.getElementById("f-desc").value.trim(),
-      amount:     parseInt(document.getElementById("f-amount").value)||0,
-      debit:      debitCode,
-      debitName:  ACCOUNTS.find(a=>a.code===debitCode)?.name||debitCode,
-      credit:     creditCode,
-      creditName: ACCOUNTS.find(a=>a.code===creditCode)?.name||creditCode,
-      taxAmount:  parseInt(document.getElementById("f-tax").value)||0,
+    const debitCode =document.getElementById("f-debit").value;
+    const creditCode=document.getElementById("f-credit").value;
+    const taxRate   =parseInt(document.getElementById("f-taxrate").value)||10;
+    const amount    =parseInt(document.getElementById("f-amount").value)||0;
+    const j={
+      id:        editId||null,
+      invoiceNo: document.getElementById("f-invoice").value||generateInvoiceNo(),
+      date:      document.getElementById("f-date").value,
+      payee:     document.getElementById("f-payee").value.trim(),
+      desc:      document.getElementById("f-desc").value.trim(),
+      item:      document.getElementById("f-item").value.trim(),
+      amount, taxRate,
+      taxAmount: parseInt(document.getElementById("f-tax").value)||calcTax(amount,taxRate),
+      debit:     debitCode,
+      debitName: ACCOUNTS.find(a=>a.code===debitCode)?.name||debitCode,
+      credit:    creditCode,
+      creditName:ACCOUNTS.find(a=>a.code===creditCode)?.name||creditCode,
     };
-    if (!j.date||!j.desc||!j.amount||!j.debit||!j.credit) {
-      showNotify("必須項目をすべて入力してください","error"); return;
-    }
-    const saved = await saveJournal(j);
-    if (editId) {
-      journals = journals.map(x=>x.id===editId ? saved : x);
-      showNotify("更新しました ✅");
-    } else {
-      journals.unshift(saved);
-      showNotify("登録しました ✅");
-    }
-    cancelEdit();
-    updateStats();
+    if(!j.date||!j.amount||!j.debit||!j.credit){showNotify("必須項目（*）を入力してください","error");return;}
+    const saved=await saveJournal(j);
+    if(editId){journals=journals.map(x=>x.id===editId?saved:x);showNotify("更新しました ✅");}
+    else{journals.unshift(saved);showNotify("登録しました ✅");}
+    cancelEdit(); updateStats();
   });
 
-  // タブ切替
   document.querySelectorAll(".tab-btn").forEach(b=>b.addEventListener("click",()=>switchTab(b.dataset.tab)));
 
-  // エクスポート
-  document.getElementById("export-btn").addEventListener("click", () => {
-    const fmt = document.getElementById("export-fmt").value;
-    if (!journals.length) { showNotify("エクスポートするデータがありません","error"); return; }
-    exportCSV(journals, fmt);
+  document.getElementById("export-btn").addEventListener("click",()=>{
+    const fmt=document.getElementById("export-fmt").value;
+    if(!journals.length){showNotify("データがありません","error");return;}
+    exportCSV(journals,fmt);
     showNotify(fmt+"形式でダウンロードしました ✅");
   });
 
   // 初期化
-  const opts = ACCOUNTS.map(a=>`<option value="${a.code}">${a.code} ${a.name}</option>`).join("");
-  document.getElementById("f-debit").innerHTML  = `<option value="">-- 借方科目を選択 --</option>${opts}`;
-  document.getElementById("f-credit").innerHTML = `<option value="">-- 貸方科目を選択 --</option>${opts}`;
-  document.getElementById("f-date").value = new Date().toISOString().slice(0,10);
+  const opts=ACCOUNTS.map(a=>`<option value="${a.code}">${a.code} ${a.name}</option>`).join("");
+  document.getElementById("f-debit").innerHTML =`<option value="">-- 借方科目を選択 --</option>${opts}`;
+  document.getElementById("f-credit").innerHTML=`<option value="">-- 貸方科目を選択 --</option>${opts}`;
+  document.getElementById("f-date").value   =new Date().toISOString().slice(0,10);
+  document.getElementById("f-invoice").value=generateInvoiceNo();
+  document.getElementById("f-taxrate").value=10;
   loadJournals();
 </script>
 
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Hiragino Kaku Gothic Pro','Noto Sans JP',sans-serif;background:#0f1117;color:#e8eaf0;min-height:100vh}
-
-/* ヘッダー */
-header{background:linear-gradient(90deg,#1a2236,#1e2d4a);border-bottom:2px solid #2a6dd9;padding:14px 20px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:100}
-.logo{font-size:20px;font-weight:900;color:#5eaeff;letter-spacing:2px}
+header{background:linear-gradient(90deg,#1a2236,#1e2d4a);border-bottom:2px solid #2a6dd9;padding:14px 20px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:100;box-shadow:0 4px 20px #0006}
+.logo{font-size:18px;font-weight:900;color:#5eaeff;letter-spacing:2px}
 .logo-sub{font-size:11px;color:#7ab0e8;margin-top:2px}
-
-/* タブ */
-.tabs{display:flex;gap:4px;padding:14px 20px 0;background:#0f1117}
-.tab-btn{padding:9px 20px;border-radius:8px 8px 0 0;border:none;cursor:pointer;font-size:13px;font-weight:700;background:#16213a;color:#7ab0e8;transition:all .15s;letter-spacing:1px}
+.tabs{display:flex;gap:4px;padding:14px 20px 0;background:#0f1117;border-bottom:1px solid #1a2d4a}
+.tab-btn{padding:9px 22px;border-radius:8px 8px 0 0;border:none;cursor:pointer;font-size:13px;font-weight:700;background:#16213a;color:#7ab0e8;transition:all .15s}
 .tab-btn.active{background:#1e2d4a;color:#5eaeff;border-bottom:2px solid #2a6dd9}
-.tab-btn:hover:not(.active){background:#1a2840;color:#a8c8ff}
-
-/* パネル */
-.tab-panel{display:none;padding:16px 20px 40px}
+.tab-btn:hover:not(.active){background:#1a2840}
+.tab-panel{display:none;padding:18px 20px 60px}
 .tab-panel.active{display:block}
-
-/* カード */
 .card{background:#16213a;border-radius:12px;padding:20px;border:1px solid #2a6dd922;margin-bottom:14px}
 .card-title{color:#5eaeff;font-size:15px;font-weight:800;margin-bottom:16px;letter-spacing:1px}
-
-/* フォーム */
 .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-@media(max-width:560px){.form-grid{grid-template-columns:1fr}}
+.form-grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+@media(max-width:600px){.form-grid,.form-grid-3{grid-template-columns:1fr}}
 .form-full{grid-column:1/-1}
-label{display:flex;flex-direction:column;gap:5px;font-size:12px;color:#7ab0e8;font-weight:700;letter-spacing:.5px}
+label{display:flex;flex-direction:column;gap:5px;font-size:12px;color:#7ab0e8;font-weight:700}
+.req::after{content:" *";color:#e05555}
 input,select{background:#0d1a2a;border:1.5px solid #2a6dd944;border-radius:8px;padding:10px 12px;color:#e8eaf0;font-size:14px;outline:none;width:100%;transition:border .15s}
 input:focus,select:focus{border-color:#2a6dd9;box-shadow:0 0 0 3px #2a6dd922}
 input::placeholder{color:#4a6a8a}
-
-/* ボタン */
-.btn{padding:12px 0;border:none;border-radius:10px;font-size:14px;font-weight:800;cursor:pointer;width:100%;letter-spacing:1px;transition:all .15s;display:flex;align-items:center;justify-content:center;gap:6px}
+input[readonly]{background:#0a1520;color:#7ab0e8;cursor:default;font-family:monospace;font-size:13px}
+.divider{border:none;border-top:1px solid #2a6dd918;margin:14px 0}
+.btn{padding:12px 0;border:none;border-radius:10px;font-size:14px;font-weight:800;cursor:pointer;width:100%;transition:all .15s;display:flex;align-items:center;justify-content:center;gap:6px}
 .btn-ai{background:linear-gradient(90deg,#6a1acc,#8a2de0);color:#fff;margin-top:10px}
 .btn-success{background:linear-gradient(90deg,#1a7a4a,#22a060);color:#fff}
 .btn-secondary{background:#1a2d4a;color:#7ab0e8;border:1.5px solid #2a6dd966;padding:10px 16px;width:auto}
 .btn:hover{opacity:.88;transform:translateY(-1px)}
-.btn:active{transform:none}
-.btn-sm{padding:5px 10px;border:none;border-radius:6px;font-size:11px;cursor:pointer;font-weight:700;transition:all .1s}
-.btn-sm{background:#1a3a5c;color:#5eaeff;margin-right:4px}
+.btn-sm{padding:5px 10px;border:none;border-radius:6px;font-size:11px;cursor:pointer;font-weight:700;background:#1a3a5c;color:#5eaeff;margin-right:4px}
 .btn-sm.del{background:#3a1a1a;color:#e05555}
 .btn-sm:hover{opacity:.8}
-
-/* AI結果 */
 .ai-result{background:#0d2244;border:1px solid #2a6dd9;border-radius:10px;padding:14px;margin-top:12px}
 .ai-label{color:#5eaeff;font-weight:800;font-size:13px;margin-bottom:6px}
 .ai-val{color:#a8c8ff;font-size:13px}
-
-/* 統計 */
-.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
-@media(max-width:480px){.stats{grid-template-columns:1fr 1fr}}
+.stats-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px}
+.stats-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+@media(max-width:500px){.stats-grid{grid-template-columns:1fr 1fr}.stats-grid-2{grid-template-columns:1fr}}
 .stat{background:#16213a;border-radius:10px;padding:14px 16px;border:1px solid #2a6dd922}
-.stat-label{font-size:11px;color:#7ab0e8;font-weight:700;letter-spacing:.5px}
-.stat-value{font-size:22px;font-weight:900;margin-top:4px}
-
-/* テーブル */
+.stat-label{font-size:11px;color:#7ab0e8;font-weight:700;margin-bottom:4px}
+.stat-value{font-size:19px;font-weight:900}
 .table-wrap{overflow-x:auto;border-radius:10px;border:1px solid #2a6dd922}
-table{width:100%;border-collapse:collapse;font-size:13px}
-th{padding:10px 10px;text-align:left;background:#1a2d4a;color:#7ab0e8;font-size:11px;font-weight:700;letter-spacing:.5px;white-space:nowrap}
-td{padding:10px 10px;border-bottom:1px solid #1a2d4a33;color:#c8d8f0;vertical-align:middle}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{padding:10px 8px;text-align:left;background:#1a2d4a;color:#7ab0e8;font-size:11px;font-weight:700;white-space:nowrap}
+td{padding:9px 8px;border-bottom:1px solid #1a2d4a33;color:#c8d8f0;vertical-align:middle}
 tr:last-child td{border-bottom:none}
 tr:hover td{background:#1e2d4a55}
-.num{font-weight:700;color:#e8eaf0;text-align:right}
-
-/* バッジ */
-.badge{padding:3px 9px;border-radius:6px;font-size:11px;font-weight:700;white-space:nowrap}
+.num{font-weight:700;text-align:right}
+.badge{padding:3px 8px;border-radius:6px;font-size:11px;font-weight:700;white-space:nowrap}
 .badge.blue{background:#1a3a5c;color:#5eaeff}
 .badge.green{background:#1a3a2a;color:#22c077}
-
-/* エクスポート */
-.export-grid{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center}
-@media(max-width:500px){.export-grid{grid-template-columns:1fr}}
-.export-grid select{max-width:100%}
-
-/* フォーマット説明 */
-.fmt-cards{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:16px}
-@media(max-width:500px){.fmt-cards{grid-template-columns:1fr}}
+.badge.orange{background:#3a2a10;color:#f4a942}
+.badge.purple{background:#2a1a4a;color:#b088ff}
+.inv-no{font-family:monospace;font-size:11px;color:#7ab0e8;background:#1a2d4a;padding:2px 6px;border-radius:4px;white-space:nowrap}
+.fmt-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:16px}
+@media(max-width:480px){.fmt-grid{grid-template-columns:1fr}}
 .fmt-card{background:#0d1a2a;border-radius:10px;padding:14px;border:1px solid #2a6dd922}
 .fmt-name{font-size:13px;font-weight:800;color:#5eaeff;margin-bottom:4px}
 .fmt-desc{font-size:11px;color:#7ab0e8}
-
-/* 通知 */
+.export-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.export-row select{flex:1;min-width:200px}
 .notify{position:fixed;top:16px;right:16px;padding:12px 22px;border-radius:10px;font-weight:700;font-size:13px;z-index:9999;opacity:0;transform:translateY(-10px);transition:all .25s;pointer-events:none;max-width:300px;box-shadow:0 4px 20px #0008}
 .notify.show{opacity:1;transform:none}
 .notify.success{background:#1e7e4a;color:#fff}
 .notify.error{background:#c0392b;color:#fff}
 .notify.info{background:#1a4a8a;color:#fff}
-
-/* スクロールバー */
 ::-webkit-scrollbar{width:6px;height:6px}
 ::-webkit-scrollbar-track{background:#0f1117}
 ::-webkit-scrollbar-thumb{background:#2a6dd9;border-radius:3px}
 </style>
 </head>
 <body>
-
 <div class="notify" id="notify"></div>
 
-<!-- ヘッダー -->
 <header>
   <div>
-    <div class="logo">⚖ KeiHi Pro</div>
-    <div class="logo-sub">AI経費仕訳・決算支援システム</div>
+    <div class="logo">📒 経費管理システム</div>
+    <div class="logo-sub">AI自動仕訳 ・ インボイス対応 ・ 消費税区分管理（8% / 10%）</div>
   </div>
 </header>
 
-<!-- タブ -->
 <div class="tabs">
   <button class="tab-btn active" data-tab="input">📝 入力</button>
   <button class="tab-btn" data-tab="list">📋 一覧</button>
   <button class="tab-btn" data-tab="export">📤 出力</button>
 </div>
 
-<!-- ===== 入力パネル ===== -->
+<!-- 入力 -->
 <div class="tab-panel active" id="panel-input">
   <div class="card">
     <div class="card-title" id="edit-label">📝 経費入力</div>
     <form id="journal-form">
       <div class="form-grid">
-        <label>日付 *<input type="date" id="f-date" required></label>
-        <label>金額（円）*<input type="number" id="f-amount" placeholder="例：3800" min="0" required></label>
-        <label class="form-full">摘要 *<input type="text" id="f-desc" placeholder="例：タクシー代、会議費、電話料金、接待費..." required></label>
+        <label>インボイス番号（自動採番）
+          <input type="text" id="f-invoice" readonly>
+        </label>
+        <label class="req">日付
+          <input type="date" id="f-date" required>
+        </label>
       </div>
-
-      <button type="button" id="ai-btn" class="btn btn-ai">🤖 AI自動仕訳（摘要・金額を入力後クリック）</button>
-
+      <hr class="divider">
+      <div class="form-grid">
+        <label>支払先
+          <input type="text" id="f-payee" placeholder="例：〇〇商店、△△株式会社">
+        </label>
+        <label>摘要
+          <input type="text" id="f-desc" placeholder="例：タクシー代、仕入れ、会議費">
+        </label>
+        <label class="form-full">品目・内容
+          <input type="text" id="f-item" placeholder="例：食材（野菜・肉類）、コピー用紙A4 500枚、ガソリン代">
+        </label>
+      </div>
+      <hr class="divider">
+      <div class="form-grid-3">
+        <label class="req">税込金額（円）
+          <input type="number" id="f-amount" placeholder="0" min="0" required>
+        </label>
+        <label>消費税率
+          <select id="f-taxrate">
+            <option value="10">10%（標準税率）</option>
+            <option value="8">8%（軽減税率）</option>
+            <option value="0">非課税 / 0%</option>
+          </select>
+        </label>
+        <label>消費税額（自動計算）
+          <input type="number" id="f-tax" value="0" min="0">
+        </label>
+      </div>
+      <button type="button" id="ai-btn" class="btn btn-ai">🤖 AI自動仕訳（摘要・金額入力後クリック）</button>
       <div class="ai-result" id="ai-result" style="display:none">
         <div class="ai-label">🎯 AI判定結果（確信度: <span id="ai-conf"></span>）</div>
-        <div class="ai-val">借方: <strong id="ai-debit"></strong> &nbsp;→&nbsp; 貸方: <strong id="ai-credit"></strong></div>
-        <div style="font-size:11px;color:#4a6a8a;margin-top:6px">科目を修正したい場合は下のプルダウンで変更できます</div>
+        <div class="ai-val">借方: <strong id="ai-debit"></strong> → 貸方: <strong id="ai-credit"></strong></div>
+        <div style="font-size:11px;color:#4a6a8a;margin-top:6px">下のプルダウンで科目を手動変更できます</div>
       </div>
-
-      <div class="form-grid" style="margin-top:14px">
-        <label>借方科目 *<select id="f-debit" required></select></label>
-        <label>貸方科目 *<select id="f-credit" required></select></label>
-        <label>消費税額（円）<input type="number" id="f-tax" value="0" min="0"></label>
+      <hr class="divider">
+      <div class="form-grid">
+        <label class="req">借方科目
+          <select id="f-debit" required></select>
+        </label>
+        <label class="req">貸方科目
+          <select id="f-credit" required></select>
+        </label>
       </div>
-
-      <div style="display:flex;gap:10px;margin-top:14px;align-items:center">
+      <div style="display:flex;gap:10px;margin-top:16px;align-items:center">
         <button type="submit" class="btn btn-success" style="flex:1">✅ 登録する</button>
         <button type="button" id="cancel-btn" class="btn btn-secondary" style="display:none" onclick="cancelEdit()">✕ キャンセル</button>
       </div>
@@ -477,90 +492,60 @@ tr:hover td{background:#1e2d4a55}
   </div>
 </div>
 
-<!-- ===== 一覧パネル ===== -->
+<!-- 一覧 -->
 <div class="tab-panel" id="panel-list">
-  <div class="stats">
-    <div class="stat">
-      <div class="stat-label">登録件数</div>
-      <div class="stat-value stat-count" style="color:#5eaeff">0件</div>
-    </div>
-    <div class="stat">
-      <div class="stat-label">合計金額</div>
-      <div class="stat-value stat-amount" style="color:#22c077">¥0</div>
-    </div>
-    <div class="stat">
-      <div class="stat-label">消費税合計</div>
-      <div class="stat-value stat-tax" style="color:#f4b942">¥0</div>
-    </div>
+  <div class="stats-grid">
+    <div class="stat"><div class="stat-label">登録件数</div><div class="stat-value stat-count" style="color:#5eaeff">0件</div></div>
+    <div class="stat"><div class="stat-label">合計金額（税込）</div><div class="stat-value stat-total" style="color:#22c077">¥0</div></div>
+    <div class="stat"><div class="stat-label">消費税合計</div><div class="stat-value stat-tax" style="color:#f4b942">¥0</div></div>
+  </div>
+  <div class="stats-grid-2">
+    <div class="stat"><div class="stat-label">🟣 10%（標準税率）金額 / 税額</div><div class="stat-value stat-10" style="color:#b088ff;font-size:14px">¥0</div></div>
+    <div class="stat"><div class="stat-label">🟠 8%（軽減税率）金額 / 税額</div><div class="stat-value stat-8" style="color:#f4a942;font-size:14px">¥0</div></div>
   </div>
   <div class="table-wrap">
     <table>
       <thead><tr>
-        <th>日付</th>
-        <th>摘要</th>
-        <th>借方科目</th>
-        <th>貸方科目</th>
-        <th style="text-align:right">金額</th>
-        <th style="text-align:right">消費税</th>
-        <th>操作</th>
+        <th>インボイス番号</th><th>日付</th><th>支払先</th><th>摘要</th><th>品目・内容</th>
+        <th>借方科目</th><th>貸方科目</th><th style="text-align:right">税込金額</th><th style="text-align:right">税率/税額</th><th>操作</th>
       </tr></thead>
       <tbody id="journal-tbody"></tbody>
     </table>
   </div>
 </div>
 
-<!-- ===== 出力パネル ===== -->
+<!-- 出力 -->
 <div class="tab-panel" id="panel-export">
   <div class="card">
-    <div class="card-title">📤 CSVエクスポート</div>
-    <div class="fmt-cards">
-      <div class="fmt-card">
-        <div class="fmt-name">📊 汎用CSV</div>
-        <div class="fmt-desc">すべての会計ソフトに対応</div>
-      </div>
-      <div class="fmt-card">
-        <div class="fmt-name">🟦 弥生会計</div>
-        <div class="fmt-desc">弥生会計・青色申告対応</div>
-      </div>
-      <div class="fmt-card">
-        <div class="fmt-name">🟢 freee</div>
-        <div class="fmt-desc">freee会計インポート形式</div>
-      </div>
-      <div class="fmt-card">
-        <div class="fmt-name">🔵 MFクラウド</div>
-        <div class="fmt-desc">マネーフォワード対応形式</div>
-      </div>
+    <div class="card-title">📋 税率別集計</div>
+    <div class="stats-grid">
+      <div class="stat"><div class="stat-label">登録件数</div><div class="stat-value stat-count" style="color:#5eaeff">0件</div></div>
+      <div class="stat"><div class="stat-label">合計金額（税込）</div><div class="stat-value stat-total" style="color:#22c077">¥0</div></div>
+      <div class="stat"><div class="stat-label">消費税合計</div><div class="stat-value stat-tax" style="color:#f4b942">¥0</div></div>
     </div>
-    <div class="export-grid">
+    <div class="stats-grid-2">
+      <div class="stat"><div class="stat-label">🟣 10%（標準税率）金額 / 税額</div><div class="stat-value stat-10" style="color:#b088ff;font-size:14px">¥0</div></div>
+      <div class="stat"><div class="stat-label">🟠 8%（軽減税率）金額 / 税額</div><div class="stat-value stat-8" style="color:#f4a942;font-size:14px">¥0</div></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title">📤 CSVエクスポート</div>
+    <div class="fmt-grid">
+      <div class="fmt-card"><div class="fmt-name">📊 汎用CSV</div><div class="fmt-desc">全ソフト対応・インボイス番号付き</div></div>
+      <div class="fmt-card"><div class="fmt-name">🟦 弥生会計</div><div class="fmt-desc">弥生会計・青色申告対応</div></div>
+      <div class="fmt-card"><div class="fmt-name">🟢 freee</div><div class="fmt-desc">freee会計インポート形式</div></div>
+      <div class="fmt-card"><div class="fmt-name">🔵 MFクラウド</div><div class="fmt-desc">マネーフォワードクラウド対応</div></div>
+    </div>
+    <div class="export-row">
       <select id="export-fmt">
-        <option value="汎用">汎用CSV（すべてのソフト対応）</option>
+        <option value="汎用">汎用CSV（全ソフト対応）</option>
         <option value="弥生">弥生会計形式</option>
         <option value="freee">freee会計形式</option>
         <option value="MF">マネーフォワードクラウド形式</option>
       </select>
-      <button id="export-btn" class="btn btn-success" style="width:auto;padding:12px 24px">⬇️ ダウンロード</button>
+      <button id="export-btn" class="btn btn-success" style="width:auto;padding:12px 28px">⬇️ ダウンロード</button>
     </div>
-  </div>
-
-  <div class="card">
-    <div class="card-title">📋 現在のデータ</div>
-    <div class="stats">
-      <div class="stat">
-        <div class="stat-label">登録件数</div>
-        <div class="stat-value stat-count" style="color:#5eaeff">0件</div>
-      </div>
-      <div class="stat">
-        <div class="stat-label">合計金額</div>
-        <div class="stat-value stat-amount" style="color:#22c077">¥0</div>
-      </div>
-      <div class="stat">
-        <div class="stat-label">消費税合計</div>
-        <div class="stat-value stat-tax" style="color:#f4b942">¥0</div>
-      </div>
-    </div>
-    <p style="font-size:12px;color:#4a6a8a;margin-top:8px">「一覧」タブで内容を確認してからエクスポートしてください。</p>
   </div>
 </div>
-
 </body>
 </html>
