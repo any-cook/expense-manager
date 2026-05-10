@@ -9,233 +9,432 @@
   import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
   import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, updateDoc, query, orderBy }
     from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
   const firebaseConfig = {
-    apiKey:"AIzaSyBsW7S7lx1XO0K_4qcbVhnLm1cV_ls3yQA",authDomain:"expense-manager-7e9b1.firebaseapp.com",
+    apiKey:"AIzaSyBsW7S7lx1XO0K_4qcbVhnLm1cV_ls3yQA",
+    authDomain:"expense-manager-7e9b1.firebaseapp.com",
     databaseURL:"https://expense-manager-7e9b1-default-rtdb.asia-southeast1.firebasedatabase.app",
-    projectId:"expense-manager-7e9b1",storageBucket:"expense-manager-7e9b1.firebasestorage.app",
-    messagingSenderId:"953669522525",appId:"1:953669522525:web:252849bda34ed998f029b4"
+    projectId:"expense-manager-7e9b1",
+    storageBucket:"expense-manager-7e9b1.firebasestorage.app",
+    messagingSenderId:"953669522525",
+    appId:"1:953669522525:web:252849bda34ed998f029b4"
   };
-  const app=initializeApp(firebaseConfig), db=getFirestore(app);
-  const KEY_NAME="keihi_gemini_key";
-  function getApiKey(){return localStorage.getItem(KEY_NAME)||"";}
-  function saveApiKey(key){
-    ["keihi_api_key","keihi_v2_api_key","keihi_gemini_key"].forEach(k=>localStorage.removeItem(k));
-    localStorage.setItem(KEY_NAME,key.trim());
+  const app = initializeApp(firebaseConfig);
+  const db  = getFirestore(app);
+
+  // ===== APIキー管理 =====
+  const KEY = "keihi_gemini_key";
+  function getKey() { return localStorage.getItem(KEY) || ""; }
+  function setKey(k) {
+    ["keihi_api_key","keihi_v2_api_key","keihi_gemini_key"].forEach(n => localStorage.removeItem(n));
+    localStorage.setItem(KEY, k.trim());
   }
-  function checkApiKey(){
-    const key=getApiKey(), valid=key&&key.startsWith("AIza")&&key.length>20;
-    document.getElementById("api-banner").style.display=valid?"none":"block";
-    document.getElementById("api-status").textContent=valid?"✅ Gemini APIキー設定済み":"⚠️ APIキー未設定";
-    document.getElementById("api-status").style.color=valid?"#26de81":"#fd9644";
-    document.getElementById("api-key-display").textContent=valid?key.slice(0,12)+"••••••":"未設定";
-    return valid;
+  function checkKey() {
+    const k = getKey(), ok = k.startsWith("AIza") && k.length > 20;
+    document.getElementById("api-banner").style.display = ok ? "none" : "block";
+    document.getElementById("api-status").textContent   = ok ? "✅ Gemini APIキー設定済み" : "⚠️ APIキー未設定";
+    document.getElementById("api-status").style.color   = ok ? "#26de81" : "#fd9644";
+    document.getElementById("api-key-disp").textContent = ok ? k.slice(0,12)+"••••••" : "未設定";
+    return ok;
   }
-  const ACCOUNTS=[
-    {code:"1001",name:"現金"},{code:"1002",name:"普通預金"},
-    {code:"2001",name:"買掛金"},{code:"2101",name:"未払金"},
-    {code:"4001",name:"売上高"},{code:"5001",name:"仕入高"},
-    {code:"6001",name:"給与手当"},{code:"6101",name:"交通費"},
-    {code:"6102",name:"旅費交通費"},{code:"6103",name:"車両費"},
-    {code:"6201",name:"通信費"},{code:"6202",name:"接待交際費"},
-    {code:"6203",name:"広告宣伝費"},{code:"6204",name:"消耗品費"},
-    {code:"6205",name:"水道光熱費"},{code:"6206",name:"地代家賃"},
-    {code:"6207",name:"保険料"},{code:"6208",name:"修繕費"},
-    {code:"6209",name:"減価償却費"},{code:"6301",name:"会議費"},
-    {code:"6302",name:"新聞図書費"},{code:"6303",name:"支払手数料"},
-    {code:"6401",name:"租税公課"},{code:"6501",name:"雑費"},
+
+  // ===== 勘定科目 =====
+  const ACCS = [
+    {c:"1001",n:"現金"},{c:"1002",n:"普通預金"},{c:"2001",n:"買掛金"},{c:"2101",n:"未払金"},
+    {c:"4001",n:"売上高"},{c:"5001",n:"仕入高"},{c:"6001",n:"給与手当"},{c:"6101",n:"交通費"},
+    {c:"6102",n:"旅費交通費"},{c:"6103",n:"車両費"},{c:"6201",n:"通信費"},{c:"6202",n:"接待交際費"},
+    {c:"6203",n:"広告宣伝費"},{c:"6204",n:"消耗品費"},{c:"6205",n:"水道光熱費"},{c:"6206",n:"地代家賃"},
+    {c:"6207",n:"保険料"},{c:"6208",n:"修繕費"},{c:"6209",n:"減価償却費"},{c:"6301",n:"会議費"},
+    {c:"6302",n:"新聞図書費"},{c:"6303",n:"支払手数料"},{c:"6401",n:"租税公課"},{c:"6501",n:"雑費"},
   ];
-  function generateInvoiceNo(){
-    const n=new Date(),y=n.getFullYear().toString().slice(2)
-      +String(n.getMonth()+1).padStart(2,"0")+String(n.getDate()).padStart(2,"0");
+  function accName(c) { return ACCS.find(a=>a.c===c)?.n || c; }
+
+  function invNo() {
+    const d=new Date(), y=d.getFullYear().toString().slice(2)
+      +String(d.getMonth()+1).padStart(2,"0")+String(d.getDate()).padStart(2,"0");
     return "INV-"+y+"-"+String(Math.floor(Math.random()*9000)+1000);
   }
-  function calcTax(a,r){if(!r||r===0)return 0;return Math.round(a-Math.round(a*100/(r===8?108:110)));}
-  const RULES=[
-    {kw:["タクシー","電車","バス","新幹線","飛行機","交通","切符","定期"],db:"6101",cr:"1001",rate:10},
-    {kw:["ガソリン","燃料","駐車","高速","車検","洗車","車両"],db:"6103",cr:"1001",rate:10},
-    {kw:["ホテル","宿泊","出張"],db:"6102",cr:"1001",rate:10},
-    {kw:["電話","携帯","インターネット","通信"],db:"6201",cr:"2101",rate:10},
-    {kw:["接待","飲食","会食","レストラン","居酒屋","ランチ","食事"],db:"6202",cr:"1001",rate:10},
-    {kw:["広告","宣伝","PR"],db:"6203",cr:"2101",rate:10},
-    {kw:["文房具","消耗品","コピー用紙","事務用品"],db:"6204",cr:"1001",rate:10},
-    {kw:["電気","ガス","水道","光熱"],db:"6205",cr:"2101",rate:10},
-    {kw:["家賃","賃料","地代","駐車場"],db:"6206",cr:"2101",rate:10},
-    {kw:["保険"],db:"6207",cr:"2101",rate:10},
-    {kw:["修繕","修理","メンテ"],db:"6208",cr:"1001",rate:10},
-    {kw:["会議","打合せ","ミーティング"],db:"6301",cr:"1001",rate:10},
-    {kw:["本","雑誌","書籍","新聞"],db:"6302",cr:"1001",rate:8},
-    {kw:["手数料","振込"],db:"6303",cr:"1002",rate:10},
-    {kw:["給与","給料","賞与"],db:"6001",cr:"1001",rate:0},
-    {kw:["仕入","材料","食材"],db:"5001",cr:"2001",rate:8},
+  function tax(a,r) { return (!r||r===0)?0:Math.round(a-Math.round(a*100/(r===8?108:110))); }
+
+  const RULES = [
+    {kw:["タクシー","電車","バス","新幹線","飛行機","交通","切符","定期"],d:"6101",c:"1001",r:10},
+    {kw:["ガソリン","燃料","駐車","高速","車検","洗車","車両"],d:"6103",c:"1001",r:10},
+    {kw:["ホテル","宿泊","出張"],d:"6102",c:"1001",r:10},
+    {kw:["電話","携帯","インターネット","通信"],d:"6201",c:"2101",r:10},
+    {kw:["接待","飲食","会食","レストラン","居酒屋","ランチ","食事"],d:"6202",c:"1001",r:10},
+    {kw:["広告","宣伝","PR"],d:"6203",c:"2101",r:10},
+    {kw:["文房具","消耗品","コピー用紙","事務用品"],d:"6204",c:"1001",r:10},
+    {kw:["電気","ガス","水道","光熱"],d:"6205",c:"2101",r:10},
+    {kw:["家賃","賃料","地代","駐車場"],d:"6206",c:"2101",r:10},
+    {kw:["保険"],d:"6207",c:"2101",r:10},
+    {kw:["修繕","修理","メンテ"],d:"6208",c:"1001",r:10},
+    {kw:["会議","打合せ"],d:"6301",c:"1001",r:10},
+    {kw:["本","雑誌","書籍","新聞"],d:"6302",c:"1001",r:8},
+    {kw:["手数料","振込"],d:"6303",c:"1002",r:10},
+    {kw:["給与","給料","賞与"],d:"6001",c:"1001",r:0},
+    {kw:["仕入","材料","食材"],d:"5001",c:"2001",r:8},
   ];
-  function localJournal(desc,amount,rate){
-    for(const r of RULES){if(r.kw.some(k=>desc.includes(k))){const t=rate??r.rate;return{debit:r.db,debitName:ACCOUNTS.find(a=>a.code===r.db)?.name||"雑費",credit:r.cr,creditName:ACCOUNTS.find(a=>a.code===r.cr)?.name||"現金",taxRate:t,taxAmount:calcTax(amount,t),confidence:0.85};}}
-    return{debit:"6501",debitName:"雑費",credit:"1001",creditName:"現金",taxRate:rate??10,taxAmount:calcTax(amount,rate??10),confidence:0.5};
+  function localJ(desc,amount,rate) {
+    for(const r of RULES) {
+      if(r.kw.some(k=>desc.includes(k))) {
+        const rt=rate??r.r;
+        return {debit:r.d,debitName:accName(r.d),credit:r.c,creditName:accName(r.c),taxRate:rt,taxAmount:tax(amount,rt),confidence:0.85};
+      }
+    }
+    return {debit:"6501",debitName:"雑費",credit:"1001",creditName:"現金",taxRate:rate??10,taxAmount:tax(amount,rate??10),confidence:0.5};
   }
-  async function callGemini(parts){
-    const key=getApiKey();if(!key)throw new Error("APIキーが設定されていません");
-    const url="https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key="+key;
-    const res=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({contents:[{parts}],generationConfig:{temperature:0.1,maxOutputTokens:1000}})});
-    if(!res.ok){const e=await res.json().catch(()=>({}));throw new Error(e?.error?.message||"APIエラー("+res.status+")");}
-    const d=await res.json();return d.candidates?.[0]?.content?.parts?.[0]?.text||"";
+
+  // ===== Gemini API =====
+  async function callGemini(parts, jsonMode=false) {
+    const k = getKey();
+    if (!k) throw new Error("APIキーが設定されていません");
+    const body = {
+      contents: [{parts}],
+      generationConfig: {
+        temperature: 0,
+        maxOutputTokens: 2000,
+        ...(jsonMode ? {responseMimeType:"application/json"} : {})
+      }
+    };
+    // gemini-2.5-flash は thinking 無効化
+    body.thinkingConfig = {thinkingBudget: 0};
+
+    const res = await fetch(
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key="+k,
+      {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)}
+    );
+    if (!res.ok) {
+      const e = await res.json().catch(()=>({}));
+      const msg = e?.error?.message || "APIエラー("+res.status+")";
+      throw new Error(msg);
+    }
+    const data = await res.json();
+    return data.candidates?.[0]?.content?.parts?.[0]?.text || "";
   }
-  async function toJpeg(dataUrl){
-    return new Promise(r=>{const i=new Image();i.onload=()=>{const c=document.createElement("canvas");c.width=i.width;c.height=i.height;c.getContext("2d").drawImage(i,0,0);r(c.toDataURL("image/jpeg",0.92));};i.onerror=()=>r(dataUrl);i.src=dataUrl;});
+
+  // ===== 画像→JPEG変換 =====
+  async function toJpeg(dataUrl) {
+    return new Promise(r => {
+      const img=new Image();
+      img.onload=()=>{
+        const c=document.createElement("canvas");
+        c.width=img.width; c.height=img.height;
+        c.getContext("2d").drawImage(img,0,0);
+        r(c.toDataURL("image/jpeg",0.92));
+      };
+      img.onerror=()=>r(dataUrl);
+      img.src=dataUrl;
+    });
   }
-  async function readReceipt(dataUrl){
-    setProgress("🔍 画像を送信中...",30);
-    if(!dataUrl.includes("image/jpeg")&&!dataUrl.includes("image/png")){setProgress("🔄 画像変換中...",15);dataUrl=await toJpeg(dataUrl);}
-    const mime=dataUrl.includes("image/png")?"image/png":"image/jpeg";
-    const b64=dataUrl.split(",")[1];
-    setProgress("🤖 AIが読み取り中...",60);
-    const prompt="このレシートまたは請求書を読み取り、JSONのみで回答（コードブロック不要）。\n利用可能な勘定科目: "+ACCOUNTS.map(a=>a.code+":"+a.name).join(",")+"\n形式: {\"date\":\"YYYY-MM-DD\",\"payee\":\"支払先\",\"desc\":\"摘要\",\"item\":\"品目\",\"amount\":税込合計整数,\"taxRate\":8か10か0,\"taxAmount\":消費税額整数,\"debit\":\"科目コード\",\"debitName\":\"科目名\",\"credit\":\"1001\",\"creditName\":\"現金\",\"confidence\":0-1}";
-    const text=await callGemini([{inline_data:{mime_type:mime,data:b64}},{text:prompt}]);
-    setProgress("✨ データ入力中...",90);
-    const m=text.match(/\{[\s\S]*\}/);if(!m)throw new Error("読み取り結果を解析できませんでした");
-    return JSON.parse(m[0]);
+
+  // ===== レシート読み取り =====
+  async function readReceipt(dataUrl) {
+    setProgress("🔄 画像を処理中...", 20);
+    // JPEG/PNG以外はJPEGに変換
+    if (!dataUrl.includes("image/jpeg") && !dataUrl.includes("image/png")) {
+      dataUrl = await toJpeg(dataUrl);
+    }
+    const mime = dataUrl.includes("image/png") ? "image/png" : "image/jpeg";
+    const b64  = dataUrl.split(",")[1];
+
+    setProgress("🤖 AIが読み取り中...", 50);
+
+    const accList = ACCS.map(a=>a.c+":"+a.n).join(", ");
+    const prompt = `You are a Japanese bookkeeping assistant. Analyze this receipt/invoice image and extract the accounting information.
+
+Available accounts: ${accList}
+
+Respond with ONLY a valid JSON object. No explanation, no markdown, no code blocks.
+
+Required JSON format:
+{
+  "date": "YYYY-MM-DD",
+  "payee": "店名または支払先",
+  "desc": "摘要（簡潔に）",
+  "item": "品目・内容の詳細",
+  "amount": 税込合計金額の整数,
+  "taxRate": 消費税率の整数（8か10か0）,
+  "taxAmount": 消費税額の整数,
+  "debit": "借方科目コード",
+  "debitName": "借方科目名",
+  "credit": "1001",
+  "creditName": "現金",
+  "confidence": 確信度0から1の小数
+}`;
+
+    // JSONモードで確実に返す
+    const text = await callGemini(
+      [{inline_data:{mime_type:mime, data:b64}}, {text:prompt}],
+      true
+    );
+
+    setProgress("✨ データ確認中...", 85);
+
+    // JSONパース（複数の方法で試みる）
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      // フォールバック：テキストからJSON部分を抽出
+      const m = text.match(/\{[\s\S]*\}/);
+      if (!m) throw new Error("レシートの内容を読み取れませんでした。別の写真をお試しください。");
+      parsed = JSON.parse(m[0]);
+    }
+    return parsed;
   }
-  async function aiJournal(desc,item,payee,amount,rate){
-    try{if(!checkApiKey())return localJournal(desc||item,amount,rate);
-      const text=await callGemini([{text:"経費仕訳JSONのみ。摘要:"+desc+" 品目:"+item+" 支払先:"+payee+" 金額:"+amount+"円 税率:"+rate+"%\n科目:"+ACCOUNTS.map(a=>a.code+":"+a.name).join(",")+"\n形式:{\"debit\":\"コード\",\"debitName\":\"名\",\"credit\":\"コード\",\"creditName\":\"名\",\"taxAmount\":数値,\"taxRate\":数値,\"confidence\":0-1}"}]);
-      const m=text.match(/\{[\s\S]*\}/);return m?JSON.parse(m[0]):localJournal(desc||item,amount,rate);
-    }catch{return localJournal(desc||item,amount,rate);}
+
+  // ===== AI自動仕訳（テキスト）=====
+  async function aiJournal(desc, item, payee, amount, rate) {
+    if (!checkKey()) return localJ(desc||item, amount, rate);
+    try {
+      const prompt = `Japanese bookkeeping. Return ONLY JSON, no other text.
+Input: desc="${desc}" item="${item}" payee="${payee}" amount=${amount}yen taxRate=${rate}%
+Accounts: ${ACCS.map(a=>a.c+":"+a.n).join(",")}
+JSON: {"debit":"code","debitName":"name","credit":"code","creditName":"name","taxAmount":integer,"taxRate":integer,"confidence":float}`;
+      const text = await callGemini([{text:prompt}], true);
+      const m = text.match(/\{[\s\S]*\}/);
+      return m ? JSON.parse(m[0]) : localJ(desc||item, amount, rate);
+    } catch { return localJ(desc||item, amount, rate); }
   }
-  function setProgress(msg,pct){document.getElementById("progress-wrap").style.display="block";document.getElementById("progress-text").textContent=msg;document.getElementById("progress-fill").style.width=pct+"%";}
-  function hideProgress(){document.getElementById("progress-wrap").style.display="none";document.getElementById("progress-fill").style.width="0%";}
-  function notify(msg,type="success"){const el=document.getElementById("notify");el.innerHTML=msg;el.className="notify show "+type;clearTimeout(el._t);el._t=setTimeout(()=>el.classList.remove("show"),5000);}
-  function exportCSV(journals,fmt){
-    const bom="\uFEFF";let c="";
-    if(fmt==="汎用")c="インボイス番号,日付,支払先,摘要,品目・内容,借方科目,貸方科目,税込金額,消費税率,消費税額\n"+journals.map(j=>`${j.invoiceNo||""},${j.date},"${j.payee||""}","${j.desc||""}","${j.item||""}",${j.debitName},${j.creditName},${j.amount},${j.taxRate||10}%,${j.taxAmount||0}`).join("\n");
-    else if(fmt==="弥生")c="識別フラグ,伝票日付,借方勘定科目,借方税区分,借方金額,借方消費税額,貸方勘定科目,貸方金額,摘要,インボイス番号\n"+journals.map(j=>`2000,${j.date.replace(/-/g,"/")},,${j.debitName},課税仕入${j.taxRate||10}%,${j.amount},${j.taxAmount||0},${j.creditName},${j.amount},"${j.desc||""}",${j.invoiceNo||""}`).join("\n");
-    else if(fmt==="freee")c="発生日,勘定科目,支払先,金額（円）,税区分,備考,インボイス番号\n"+journals.map(j=>`${j.date},${j.debitName},"${j.payee||""}",${j.amount},課税仕入(${j.taxRate||10}%),"${j.desc||""}",${j.invoiceNo||""}`).join("\n");
-    else if(fmt==="MF")c="取引日,借方勘定科目,借方税区分,借方金額,貸方勘定科目,貸方金額,摘要,インボイス番号\n"+journals.map(j=>`${j.date},${j.debitName},${j.taxRate||10}%,${j.amount},${j.creditName},${j.amount},"${j.desc||""}",${j.invoiceNo||""}`).join("\n");
-    const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([bom+c],{type:"text/csv;charset=utf-8;"}));
-    a.download="経費仕訳_"+fmt+"_"+new Date().toISOString().slice(0,10)+".csv";a.click();URL.revokeObjectURL(a.href);
+
+  // ===== UI ヘルパー =====
+  function setProgress(msg, pct) {
+    document.getElementById("progress-wrap").style.display = "block";
+    document.getElementById("progress-text").textContent  = msg;
+    document.getElementById("progress-fill").style.width  = pct+"%";
   }
-  let journals=[],editId=null;
-  async function loadJournals(){
-    try{const snap=await getDocs(query(collection(db,"journals"),orderBy("createdAt","desc")));journals=snap.docs.map(d=>({id:d.id,...d.data()}));if(journals.length)notify("✨ 読込完了（"+journals.length+"件）");}
-    catch{journals=JSON.parse(localStorage.getItem("keihi_journals")||"[]");if(journals.length)notify("ローカルデータを使用","info");}
-    renderList();updateStats();
+  function hideProgress() {
+    document.getElementById("progress-wrap").style.display = "none";
+    document.getElementById("progress-fill").style.width   = "0%";
   }
-  async function saveJournal(j){
-    try{if(j.id){const{id,...d}=j;await updateDoc(doc(db,"journals",id),d);}else{j.createdAt=new Date().toISOString();const{id,...d}=j;const ref=await addDoc(collection(db,"journals"),d);j.id=ref.id;}}
-    catch{if(!j.id)j.id="local_"+Date.now();const lo=JSON.parse(localStorage.getItem("keihi_journals")||"[]");const idx=lo.findIndex(l=>l.id===j.id);if(idx>=0)lo[idx]=j;else lo.unshift(j);localStorage.setItem("keihi_journals",JSON.stringify(lo));}
+  function notify(msg, type="success") {
+    const el = document.getElementById("notify");
+    el.innerHTML = msg; el.className = "notify show "+type;
+    clearTimeout(el._t); el._t = setTimeout(()=>el.classList.remove("show"), 5000);
+  }
+  function $v(id) { return document.getElementById(id).value; }
+  function $s(id,v) { document.getElementById(id).value = v; }
+
+  // ===== CSV =====
+  function csv(js, fmt) {
+    const B="\uFEFF"; let c="";
+    if(fmt==="汎用") c="インボイス番号,日付,支払先,摘要,品目・内容,借方科目,貸方科目,税込金額,消費税率,消費税額\n"
+      +js.map(j=>`${j.inv||""},${j.date},"${j.payee||""}","${j.desc||""}","${j.item||""}",${j.dName},${j.cName},${j.amount},${j.tRate||10}%,${j.tAmt||0}`).join("\n");
+    else if(fmt==="弥生") c="識別フラグ,伝票日付,借方勘定科目,借方税区分,借方金額,借方消費税額,貸方勘定科目,貸方金額,摘要,インボイス番号\n"
+      +js.map(j=>`2000,${j.date.replace(/-/g,"/")},,${j.dName},課税仕入${j.tRate||10}%,${j.amount},${j.tAmt||0},${j.cName},${j.amount},"${j.desc||""}",${j.inv||""}`).join("\n");
+    else if(fmt==="freee") c="発生日,勘定科目,支払先,金額（円）,税区分,備考,インボイス番号\n"
+      +js.map(j=>`${j.date},${j.dName},"${j.payee||""}",${j.amount},課税仕入(${j.tRate||10}%),"${j.desc||""}",${j.inv||""}`).join("\n");
+    else if(fmt==="MF") c="取引日,借方勘定科目,借方税区分,借方金額,貸方勘定科目,貸方金額,摘要,インボイス番号\n"
+      +js.map(j=>`${j.date},${j.dName},${j.tRate||10}%,${j.amount},${j.cName},${j.amount},"${j.desc||""}",${j.inv||""}`).join("\n");
+    const a=document.createElement("a");
+    a.href=URL.createObjectURL(new Blob([B+c],{type:"text/csv;charset=utf-8;"}));
+    a.download="経費仕訳_"+fmt+"_"+new Date().toISOString().slice(0,10)+".csv";
+    a.click(); URL.revokeObjectURL(a.href);
+  }
+
+  // ===== Firebase =====
+  let journals=[], editId=null;
+
+  async function load() {
+    try {
+      const snap=await getDocs(query(collection(db,"journals"),orderBy("createdAt","desc")));
+      journals=snap.docs.map(d=>({id:d.id,...d.data()}));
+      if(journals.length) notify("✨ 読込完了（"+journals.length+"件）");
+    } catch {
+      journals=JSON.parse(localStorage.getItem("keihi_j")||"[]");
+      if(journals.length) notify("ローカルデータを使用","info");
+    }
+    renderList(); stats();
+  }
+  async function save(j) {
+    try {
+      if(j.id){const{id,...d}=j;await updateDoc(doc(db,"journals",id),d);}
+      else{j.createdAt=new Date().toISOString();const{id,...d}=j;const r=await addDoc(collection(db,"journals"),d);j.id=r.id;}
+    } catch {
+      if(!j.id) j.id="lo_"+Date.now();
+      const lo=JSON.parse(localStorage.getItem("keihi_j")||"[]");
+      const i=lo.findIndex(l=>l.id===j.id);
+      if(i>=0) lo[i]=j; else lo.unshift(j);
+      localStorage.setItem("keihi_j",JSON.stringify(lo));
+    }
     return j;
   }
-  async function removeJournal(id){
-    if(!confirm("削除しますか？"))return;
+  async function del(id) {
+    if(!confirm("削除しますか？")) return;
     try{await deleteDoc(doc(db,"journals",id));}catch{}
-    const lo=JSON.parse(localStorage.getItem("keihi_journals")||"[]");localStorage.setItem("keihi_journals",JSON.stringify(lo.filter(j=>j.id!==id)));
-    journals=journals.filter(j=>j.id!==id);renderList();updateStats();notify("削除しました");
+    const lo=JSON.parse(localStorage.getItem("keihi_j")||"[]");
+    localStorage.setItem("keihi_j",JSON.stringify(lo.filter(j=>j.id!==id)));
+    journals=journals.filter(j=>j.id!==id);
+    renderList(); stats(); notify("削除しました");
   }
-  function switchTab(t){document.querySelectorAll(".tab-btn").forEach(b=>b.classList.toggle("active",b.dataset.tab===t));document.querySelectorAll(".tab-panel").forEach(p=>p.classList.toggle("active",p.id==="panel-"+t));if(t==="list"||t==="export"){renderList();updateStats();}}
-  function updateStats(){
-    const j10=journals.filter(j=>Number(j.taxRate||10)===10),j8=journals.filter(j=>Number(j.taxRate||10)===8);
-    const t10=j10.reduce((s,j)=>s+Number(j.amount||0),0),x10=j10.reduce((s,j)=>s+Number(j.taxAmount||0),0);
-    const t8=j8.reduce((s,j)=>s+Number(j.amount||0),0),x8=j8.reduce((s,j)=>s+Number(j.taxAmount||0),0);
-    document.querySelectorAll(".stat-count").forEach(el=>el.textContent=journals.length+"件");
-    document.querySelectorAll(".stat-total").forEach(el=>el.textContent="¥"+(t10+t8).toLocaleString());
-    document.querySelectorAll(".stat-tax").forEach(el=>el.textContent="¥"+(x10+x8).toLocaleString());
-    document.querySelectorAll(".stat-10").forEach(el=>el.textContent="¥"+t10.toLocaleString()+"（税額¥"+x10.toLocaleString()+"）");
-    document.querySelectorAll(".stat-8").forEach(el=>el.textContent="¥"+t8.toLocaleString()+"（税額¥"+x8.toLocaleString()+"）");
+
+  // ===== レンダリング =====
+  function tab(t) {
+    document.querySelectorAll(".tab-btn").forEach(b=>b.classList.toggle("active",b.dataset.tab===t));
+    document.querySelectorAll(".tab-panel").forEach(p=>p.classList.toggle("active",p.id==="p-"+t));
+    if(t==="list"||t==="export"){renderList();stats();}
   }
-  function renderList(){
-    const tbody=document.getElementById("journal-tbody");
-    if(!journals.length){tbody.innerHTML='<tr><td colspan="10" style="text-align:center;color:#aaa;padding:56px;font-size:16px">📭 データがありません</td></tr>';return;}
-    tbody.innerHTML=journals.map(j=>'<tr><td><span class="inv-no">'+(j.invoiceNo||"-")+'</span></td><td style="white-space:nowrap">'+(j.date||"")+'</td><td>'+(j.payee||"-").slice(0,10)+((j.payee||"").length>10?"…":"")+'</td><td>'+(j.desc||"-").slice(0,12)+((j.desc||"").length>12?"…":"")+'</td><td>'+(j.item||"-").slice(0,12)+((j.item||"").length>12?"…":"")+'</td><td><span class="badge blue">'+(j.debitName||"")+'</span></td><td><span class="badge green">'+(j.creditName||"")+'</span></td><td class="num">¥'+Number(j.amount||0).toLocaleString()+'</td><td class="num"><span class="badge '+(Number(j.taxRate||10)===8?"orange":"purple")+'">'+(j.taxRate||10)+'%</span><div style="margin-top:3px">¥'+Number(j.taxAmount||0).toLocaleString()+'</div></td><td><button class="btn-sm" onclick="startEdit(\''+j.id+'\')">編集</button><button class="btn-sm del" onclick="removeJournal(\''+j.id+'\')">削除</button></td></tr>').join("");
+  function stats() {
+    const j10=journals.filter(j=>Number(j.tRate||10)===10);
+    const j8=journals.filter(j=>Number(j.tRate||10)===8);
+    const t10=j10.reduce((s,j)=>s+Number(j.amount||0),0),x10=j10.reduce((s,j)=>s+Number(j.tAmt||0),0);
+    const t8=j8.reduce((s,j)=>s+Number(j.amount||0),0),x8=j8.reduce((s,j)=>s+Number(j.tAmt||0),0);
+    document.querySelectorAll(".sc").forEach(el=>el.textContent=journals.length+"件");
+    document.querySelectorAll(".st").forEach(el=>el.textContent="¥"+(t10+t8).toLocaleString());
+    document.querySelectorAll(".sx").forEach(el=>el.textContent="¥"+(x10+x8).toLocaleString());
+    document.querySelectorAll(".s10").forEach(el=>el.textContent="¥"+t10.toLocaleString()+"（税額¥"+x10.toLocaleString()+"）");
+    document.querySelectorAll(".s8").forEach(el=>el.textContent="¥"+t8.toLocaleString()+"（税額¥"+x8.toLocaleString()+"）");
   }
-  window.removeJournal=removeJournal;
+  function renderList() {
+    const tb=document.getElementById("tbody");
+    if(!journals.length){tb.innerHTML='<tr><td colspan="10" style="text-align:center;color:#aaa;padding:50px">📭 データがありません</td></tr>';return;}
+    tb.innerHTML=journals.map(j=>`<tr>
+      <td><span class="inv-no">${j.inv||"-"}</span></td>
+      <td style="white-space:nowrap">${j.date||""}</td>
+      <td>${(j.payee||"-").slice(0,10)}${(j.payee||"").length>10?"…":""}</td>
+      <td>${(j.desc||"-").slice(0,12)}${(j.desc||"").length>12?"…":""}</td>
+      <td>${(j.item||"-").slice(0,12)}${(j.item||"").length>12?"…":""}</td>
+      <td><span class="bd blue">${j.dName||""}</span></td>
+      <td><span class="bd green">${j.cName||""}</span></td>
+      <td class="num">¥${Number(j.amount||0).toLocaleString()}</td>
+      <td class="num"><span class="bd ${Number(j.tRate||10)===8?"orange":"purple"}">${j.tRate||10}%</span><div style="margin-top:3px">¥${Number(j.tAmt||0).toLocaleString()}</div></td>
+      <td><button class="bs" onclick="startEdit('${j.id}')">編集</button><button class="bs del" onclick="delJ('${j.id}')">削除</button></td>
+    </tr>`).join("");
+  }
+
+  window.delJ=del;
   window.startEdit=function(id){
-    const j=journals.find(x=>x.id===id);if(!j)return;editId=id;
-    document.getElementById("f-invoice").value=j.invoiceNo||"";document.getElementById("f-date").value=j.date||"";
-    document.getElementById("f-payee").value=j.payee||"";document.getElementById("f-desc").value=j.desc||"";
-    document.getElementById("f-item").value=j.item||"";document.getElementById("f-amount").value=j.amount||"";
-    document.getElementById("f-taxrate").value=j.taxRate||10;document.getElementById("f-tax").value=j.taxAmount||0;
-    document.getElementById("f-debit").value=j.debit||"";document.getElementById("f-credit").value=j.credit||"";
-    document.getElementById("edit-label").textContent="✏️ 仕訳編集中";document.getElementById("cancel-btn").style.display="inline-flex";
-    switchTab("input");window.scrollTo(0,0);
+    const j=journals.find(x=>x.id===id);if(!j)return;
+    editId=id;
+    $s("f-inv",j.inv||"");$s("f-date",j.date||"");$s("f-payee",j.payee||"");
+    $s("f-desc",j.desc||"");$s("f-item",j.item||"");$s("f-amount",j.amount||"");
+    $s("f-tr",j.tRate||10);$s("f-tx",j.tAmt||0);
+    $s("f-dr",j.debit||"");$s("f-cr",j.credit||"");
+    document.getElementById("edit-lbl").textContent="✏️ 仕訳編集中";
+    document.getElementById("cancel-btn").style.display="inline-flex";
+    tab("input");window.scrollTo(0,0);
   };
   window.cancelEdit=function(){
     editId=null;document.getElementById("journal-form").reset();
-    document.getElementById("f-date").value=new Date().toISOString().slice(0,10);
-    document.getElementById("f-invoice").value=generateInvoiceNo();document.getElementById("f-taxrate").value=10;document.getElementById("f-tax").value=0;
-    document.getElementById("edit-label").textContent="📝 経費入力";document.getElementById("cancel-btn").style.display="none";
-    document.getElementById("ai-result").style.display="none";document.getElementById("receipt-preview").style.display="none";document.getElementById("receipt-img").src="";hideProgress();
+    $s("f-date",new Date().toISOString().slice(0,10));
+    $s("f-inv",invNo());$s("f-tr",10);$s("f-tx",0);
+    document.getElementById("edit-lbl").textContent="📝 経費入力";
+    document.getElementById("cancel-btn").style.display="none";
+    document.getElementById("ai-res").style.display="none";
+    document.getElementById("rec-prev").style.display="none";
+    document.getElementById("rec-img").src="";
+    hideProgress();
   };
-  document.getElementById("f-amount").addEventListener("input",()=>{const a=parseInt(document.getElementById("f-amount").value)||0,r=parseInt(document.getElementById("f-taxrate").value)||10;document.getElementById("f-tax").value=calcTax(a,r);});
-  document.getElementById("f-taxrate").addEventListener("change",()=>{const a=parseInt(document.getElementById("f-amount").value)||0,r=parseInt(document.getElementById("f-taxrate").value)||10;document.getElementById("f-tax").value=calcTax(a,r);});
-  document.getElementById("save-api-btn").addEventListener("click",()=>{
-    const key=document.getElementById("api-key-input").value.trim();
-    if(!key.startsWith("AIza")||key.length<30){notify("❌ 正しいGemini APIキーを入力してください（AIzaSy... で始まる文字列）","error");return;}
-    saveApiKey(key);document.getElementById("api-key-input").value="";checkApiKey();notify("✅ Gemini APIキーを保存しました！レシート読み取りが使えます🎉");
+
+  // 消費税自動計算
+  function reTax(){const a=parseInt($v("f-amount"))||0,r=parseInt($v("f-tr"))||10;$s("f-tx",tax(a,r));}
+  document.getElementById("f-amount").addEventListener("input",reTax);
+  document.getElementById("f-tr").addEventListener("change",reTax);
+
+  // APIキー保存
+  document.getElementById("save-key-btn").addEventListener("click",()=>{
+    const k=document.getElementById("key-input").value.trim();
+    if(!k.startsWith("AIza")||k.length<30){notify("❌ 正しいGemini APIキーを入力してください（AIzaSy... で始まる文字列）","error");return;}
+    setKey(k);document.getElementById("key-input").value="";checkKey();
+    notify("✅ Gemini APIキーを保存しました！レシート読み取りが使えます🎉");
   });
-  async function processFile(file){
-    if(!file)return;if(!file.type.startsWith("image/")){notify("❌ 画像ファイルを選んでください","error");return;}
-    if(!checkApiKey()){notify("⚠️ 先にGemini APIキーを設定してください","error");document.getElementById("api-banner").style.display="block";window.scrollTo(0,0);return;}
+
+  // 画像処理
+  async function processFile(file) {
+    if(!file) return;
+    if(!file.type.startsWith("image/")){notify("❌ 画像ファイルを選んでください","error");return;}
+    if(!checkKey()){
+      notify("⚠️ 先にGemini APIキーを設定してください","error");
+      document.getElementById("api-banner").style.display="block";window.scrollTo(0,0);return;
+    }
     const reader=new FileReader();
     reader.onload=async(ev)=>{
-      try{
-        let dataUrl=ev.target.result;
-        document.getElementById("receipt-img").src=dataUrl;document.getElementById("receipt-preview").style.display="block";
-        const result=await readReceipt(dataUrl);hideProgress();
-        if(result.date?.match(/^\d{4}-\d{2}-\d{2}$/))document.getElementById("f-date").value=result.date;
-        if(result.payee)document.getElementById("f-payee").value=result.payee;
-        if(result.desc)document.getElementById("f-desc").value=result.desc;
-        if(result.item)document.getElementById("f-item").value=result.item;
-        if(result.amount>0)document.getElementById("f-amount").value=result.amount;
-        if(result.taxRate!=null)document.getElementById("f-taxrate").value=result.taxRate;
-        if(result.taxAmount!=null)document.getElementById("f-tax").value=result.taxAmount;
-        if(result.debit)document.getElementById("f-debit").value=result.debit;
-        if(result.credit)document.getElementById("f-credit").value=result.credit;
-        document.getElementById("ai-result").style.display="block";
-        document.getElementById("ai-debit").textContent=result.debitName||"-";
-        document.getElementById("ai-credit").textContent=result.creditName||"-";
-        document.getElementById("ai-conf").textContent=Math.round((result.confidence||0)*100)+"%";
+      try {
+        const dataUrl=ev.target.result;
+        document.getElementById("rec-img").src=dataUrl;
+        document.getElementById("rec-prev").style.display="block";
+        const r=await readReceipt(dataUrl);
+        hideProgress();
+        if(r.date?.match(/^\d{4}-\d{2}-\d{2}$/)) $s("f-date",r.date);
+        if(r.payee)    $s("f-payee",r.payee);
+        if(r.desc)     $s("f-desc",r.desc);
+        if(r.item)     $s("f-item",r.item);
+        if(r.amount>0) $s("f-amount",r.amount);
+        if(r.taxRate!=null) $s("f-tr",r.taxRate);
+        if(r.taxAmount!=null) $s("f-tx",r.taxAmount);
+        if(r.debit)  $s("f-dr",r.debit);
+        if(r.credit) $s("f-cr",r.credit);
+        document.getElementById("ai-res").style.display="block";
+        document.getElementById("ai-dr").textContent=r.debitName||"-";
+        document.getElementById("ai-cr").textContent=r.creditName||"-";
+        document.getElementById("ai-cf").textContent=Math.round((r.confidence||0)*100)+"%";
         notify("✨ レシートの読み取り完了！内容を確認して「登録する」を押してください。");
-      }catch(err){hideProgress();notify("❌ "+err.message,"error");console.error(err);}
+      } catch(e) {
+        hideProgress();
+        notify("❌ "+e.message,"error");
+        console.error(e);
+      }
     };
-    reader.onerror=()=>notify("❌ ファイル読み込み失敗","error");reader.readAsDataURL(file);
+    reader.onerror=()=>notify("❌ ファイルを読み込めませんでした","error");
+    reader.readAsDataURL(file);
   }
-  document.getElementById("receipt-input").addEventListener("change",async(e)=>{await processFile(e.target.files[0]);e.target.value="";});
+
+  document.getElementById("rec-input").addEventListener("change",async e=>{await processFile(e.target.files[0]);e.target.value="";});
   const dz=document.getElementById("drop-zone");
-  dz.addEventListener("dragover",e=>{e.preventDefault();dz.classList.add("drag-over");});
-  dz.addEventListener("dragleave",()=>dz.classList.remove("drag-over"));
-  dz.addEventListener("drop",async(e)=>{e.preventDefault();dz.classList.remove("drag-over");await processFile(e.dataTransfer.files[0]);});
+  dz.addEventListener("dragover",e=>{e.preventDefault();dz.classList.add("dov");});
+  dz.addEventListener("dragleave",()=>dz.classList.remove("dov"));
+  dz.addEventListener("drop",async e=>{e.preventDefault();dz.classList.remove("dov");await processFile(e.dataTransfer.files[0]);});
+
+  // AI仕訳ボタン
   document.getElementById("ai-btn").addEventListener("click",async()=>{
-    const desc=document.getElementById("f-desc").value.trim(),item=document.getElementById("f-item").value.trim();
-    const payee=document.getElementById("f-payee").value.trim(),amount=parseInt(document.getElementById("f-amount").value)||0;
-    const rate=parseInt(document.getElementById("f-taxrate").value)||10;
-    if(!desc&&!item){notify("摘要または品目を入力してください","error");return;}if(!amount){notify("金額を入力してください","error");return;}
-    const btn=document.getElementById("ai-btn");btn.textContent="⏳ AI判定中...";btn.disabled=true;
-    const r=await aiJournal(desc,item,payee,amount,rate);btn.textContent="🤖 AI自動仕訳";btn.disabled=false;
-    document.getElementById("f-debit").value=r.debit||"6501";document.getElementById("f-credit").value=r.credit||"1001";
-    document.getElementById("f-tax").value=r.taxAmount||calcTax(amount,rate);if(r.taxRate!=null)document.getElementById("f-taxrate").value=r.taxRate;
-    document.getElementById("ai-result").style.display="block";document.getElementById("ai-debit").textContent=r.debitName||"";
-    document.getElementById("ai-credit").textContent=r.creditName||"";document.getElementById("ai-conf").textContent=Math.round((r.confidence||0)*100)+"%";
+    const desc=$v("f-desc"),item=$v("f-item"),payee=$v("f-payee");
+    const amount=parseInt($v("f-amount"))||0,rate=parseInt($v("f-tr"))||10;
+    if(!desc&&!item){notify("摘要または品目を入力してください","error");return;}
+    if(!amount){notify("金額を入力してください","error");return;}
+    const btn=document.getElementById("ai-btn");
+    btn.textContent="⏳ AI判定中...";btn.disabled=true;
+    const r=await aiJournal(desc,item,payee,amount,rate);
+    btn.textContent="🤖 AI自動仕訳";btn.disabled=false;
+    $s("f-dr",r.debit||"6501");$s("f-cr",r.credit||"1001");
+    $s("f-tx",r.taxAmount||tax(amount,rate));
+    if(r.taxRate!=null) $s("f-tr",r.taxRate);
+    document.getElementById("ai-res").style.display="block";
+    document.getElementById("ai-dr").textContent=r.debitName||"";
+    document.getElementById("ai-cr").textContent=r.creditName||"";
+    document.getElementById("ai-cf").textContent=Math.round((r.confidence||0)*100)+"%";
   });
+
+  // 登録
   document.getElementById("journal-form").addEventListener("submit",async e=>{
-    e.preventDefault();const dc=document.getElementById("f-debit").value,cc=document.getElementById("f-credit").value;
-    const taxRate=parseInt(document.getElementById("f-taxrate").value)||10,amount=parseInt(document.getElementById("f-amount").value)||0;
-    const j={id:editId||null,invoiceNo:document.getElementById("f-invoice").value||generateInvoiceNo(),date:document.getElementById("f-date").value,
-      payee:document.getElementById("f-payee").value.trim(),desc:document.getElementById("f-desc").value.trim(),
-      item:document.getElementById("f-item").value.trim(),amount,taxRate,
-      taxAmount:parseInt(document.getElementById("f-tax").value)||calcTax(amount,taxRate),
-      debit:dc,debitName:ACCOUNTS.find(a=>a.code===dc)?.name||dc,credit:cc,creditName:ACCOUNTS.find(a=>a.code===cc)?.name||cc};
+    e.preventDefault();
+    const dc=$v("f-dr"),cc=$v("f-cr"),tr=parseInt($v("f-tr"))||10,amt=parseInt($v("f-amount"))||0;
+    const j={
+      id:editId||null, inv:$v("f-inv")||invNo(), date:$v("f-date"),
+      payee:$v("f-payee").trim(), desc:$v("f-desc").trim(), item:$v("f-item").trim(),
+      amount:amt, tRate:tr, tAmt:parseInt($v("f-tx"))||tax(amt,tr),
+      debit:dc, dName:accName(dc), credit:cc, cName:accName(cc),
+    };
     if(!j.date||!j.amount||!j.debit||!j.credit){notify("必須項目（✳）を入力してください","error");return;}
-    const saved=await saveJournal(j);
-    if(editId){journals=journals.map(x=>x.id===editId?saved:x);notify("✅ 更新しました！");}else{journals.unshift(saved);notify("✅ 登録しました！");}
-    cancelEdit();updateStats();
+    const saved=await save(j);
+    if(editId){journals=journals.map(x=>x.id===editId?saved:x);notify("✅ 更新しました！");}
+    else{journals.unshift(saved);notify("✅ 登録しました！");}
+    cancelEdit();stats();
   });
-  document.querySelectorAll(".tab-btn").forEach(b=>b.addEventListener("click",()=>switchTab(b.dataset.tab)));
-  document.getElementById("export-btn").addEventListener("click",()=>{if(!journals.length){notify("データがありません","error");return;}exportCSV(journals,document.getElementById("export-fmt").value);notify("ダウンロードしました ✨");});
-  const opts=ACCOUNTS.map(a=>'<option value="'+a.code+'">'+a.code+" "+a.name+"</option>").join("");
-  document.getElementById("f-debit").innerHTML='<option value="">-- 借方科目を選択 --</option>'+opts;
-  document.getElementById("f-credit").innerHTML='<option value="">-- 貸方科目を選択 --</option>'+opts;
-  document.getElementById("f-date").value=new Date().toISOString().slice(0,10);
-  document.getElementById("f-invoice").value=generateInvoiceNo();
-  checkApiKey();loadJournals();
+
+  document.querySelectorAll(".tab-btn").forEach(b=>b.addEventListener("click",()=>tab(b.dataset.tab)));
+  document.getElementById("exp-btn").addEventListener("click",()=>{
+    if(!journals.length){notify("データがありません","error");return;}
+    csv(journals,$v("exp-fmt"));notify("ダウンロードしました ✨");
+  });
+
+  // 初期化
+  const opts=ACCS.map(a=>`<option value="${a.c}">${a.c} ${a.n}</option>`).join("");
+  document.getElementById("f-dr").innerHTML=`<option value="">-- 借方科目を選択 --</option>${opts}`;
+  document.getElementById("f-cr").innerHTML=`<option value="">-- 貸方科目を選択 --</option>${opts}`;
+  $s("f-date",new Date().toISOString().slice(0,10));
+  $s("f-inv",invNo());
+  checkKey();
+  load();
 </script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -245,9 +444,9 @@ header{background:linear-gradient(90deg,#1a2744,#2a3f6f);border-bottom:3px solid
 .api-banner{background:rgba(253,150,68,.12);border:2px solid rgba(253,150,68,.4);border-radius:16px;margin:14px 20px 0;padding:18px}
 .api-banner-title{color:#fd9644;font-size:15px;font-weight:900;margin-bottom:10px}
 .api-banner-sub{font-size:13px;color:#c8a080;margin-bottom:12px;line-height:1.7}
-.api-input-row{display:flex;gap:10px;flex-wrap:wrap}
-.api-input-row input{flex:1;min-width:200px;background:rgba(0,10,30,.5);border:2px solid rgba(253,150,68,.4);border-radius:12px;padding:12px 14px;color:#e8eaf0;font-family:'M PLUS Rounded 1c',sans-serif;font-size:14px;outline:none}
-.api-input-row input:focus{border-color:#fd9644}.api-input-row input::placeholder{color:#8a6a4a}
+.api-row{display:flex;gap:10px;flex-wrap:wrap}
+.api-row input{flex:1;min-width:200px;background:rgba(0,10,30,.5);border:2px solid rgba(253,150,68,.4);border-radius:12px;padding:12px 14px;color:#e8eaf0;font-family:'M PLUS Rounded 1c',sans-serif;font-size:14px;outline:none}
+.api-row input:focus{border-color:#fd9644}.api-row input::placeholder{color:#8a6a4a}
 .progress-wrap{display:none;margin:12px 20px 0;background:rgba(74,143,255,.08);border:1px solid rgba(74,143,255,.3);border-radius:12px;padding:14px}
 .progress-text{font-size:14px;color:#7eb8ff;font-weight:700;margin-bottom:8px}
 .progress-track{background:rgba(74,143,255,.2);border-radius:6px;height:8px;overflow:hidden}
@@ -260,47 +459,47 @@ header{background:linear-gradient(90deg,#1a2744,#2a3f6f);border-bottom:3px solid
 .card{background:rgba(255,255,255,.06);border-radius:18px;padding:22px;border:1px solid rgba(74,143,255,.2);margin-bottom:16px;backdrop-filter:blur(10px)}
 .card-title{color:#7eb8ff;font-size:17px;font-weight:900;margin-bottom:18px}
 .drop-zone{border:2.5px dashed rgba(74,143,255,.4);border-radius:16px;padding:28px 20px;text-align:center;cursor:pointer;transition:all .2s;background:rgba(74,143,255,.05);margin-bottom:12px;position:relative}
-.drop-zone:hover,.drop-zone.drag-over{border-color:#4a8fff;background:rgba(74,143,255,.12);transform:scale(1.01)}
+.drop-zone:hover,.drop-zone.dov{border-color:#4a8fff;background:rgba(74,143,255,.12);transform:scale(1.01)}
 .drop-zone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
 .dz-icon{font-size:44px;margin-bottom:10px;display:block}.dz-text{font-size:16px;font-weight:800;color:#7eb8ff;margin-bottom:6px}.dz-sub{font-size:13px;color:#9bbde0}
-.receipt-preview{margin-top:12px;border-radius:12px;overflow:hidden;border:2px solid rgba(74,143,255,.3);display:none}
-.receipt-preview img{width:100%;max-height:220px;object-fit:contain;background:#0a0f1e}
-.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.form-grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
-@media(max-width:600px){.form-grid,.form-grid-3{grid-template-columns:1fr}}.form-full{grid-column:1/-1}
+.rec-prev{margin-top:12px;border-radius:12px;overflow:hidden;border:2px solid rgba(74,143,255,.3);display:none}
+.rec-prev img{width:100%;max-height:220px;object-fit:contain;background:#0a0f1e}
+.fg{display:grid;grid-template-columns:1fr 1fr;gap:14px}.fg3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+@media(max-width:600px){.fg,.fg3{grid-template-columns:1fr}}.ff{grid-column:1/-1}
 label{display:flex;flex-direction:column;gap:6px;font-size:13px;color:#9bbde0;font-weight:800}.req::after{content:" ✳";color:#ff7eb8;font-size:11px}
 input,select{background:rgba(0,10,30,.5);border:2px solid rgba(74,143,255,.25);border-radius:12px;padding:12px 14px;color:#e8eaf0;font-size:15px;font-family:'M PLUS Rounded 1c',sans-serif;font-weight:500;outline:none;width:100%;transition:all .2s}
 input:focus,select:focus{border-color:#4a8fff;box-shadow:0 0 0 4px rgba(74,143,255,.15)}
 input::placeholder{color:#4a6a9a}input[readonly]{background:rgba(74,143,255,.08);color:#7eb8ff;cursor:default;font-family:monospace;font-size:13px;font-weight:700}
-select option{background:#1a2744}.divider{border:none;border-top:1px solid rgba(74,143,255,.12);margin:16px 0}
+select option{background:#1a2744}.div{border:none;border-top:1px solid rgba(74,143,255,.12);margin:16px 0}
 .btn{padding:14px 0;border:none;border-radius:14px;font-size:16px;font-weight:900;cursor:pointer;width:100%;font-family:'M PLUS Rounded 1c',sans-serif;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:8px}
-.btn-ai{background:linear-gradient(135deg,#a55eea,#7c4dff);color:#fff}
-.btn-success{background:linear-gradient(135deg,#26de81,#20bf6b);color:#fff}
-.btn-secondary{background:rgba(74,143,255,.12);color:#7eb8ff;border:2px solid rgba(74,143,255,.3);padding:12px 20px;width:auto;font-size:15px}
-.btn-orange{background:linear-gradient(135deg,#fd9644,#e55039);color:#fff;padding:12px 24px;width:auto}
+.btn-ai{background:linear-gradient(135deg,#a55eea,#7c4dff);color:#fff;margin-top:14px}
+.btn-ok{background:linear-gradient(135deg,#26de81,#20bf6b);color:#fff}
+.btn-2{background:rgba(74,143,255,.12);color:#7eb8ff;border:2px solid rgba(74,143,255,.3);padding:12px 20px;width:auto;font-size:15px}
+.btn-og{background:linear-gradient(135deg,#fd9644,#e55039);color:#fff;padding:12px 24px;width:auto}
 .btn:hover{opacity:.9;transform:translateY(-2px)}
-.btn-sm{padding:7px 13px;border:none;border-radius:8px;font-size:12px;cursor:pointer;font-weight:800;font-family:'M PLUS Rounded 1c',sans-serif;background:rgba(74,143,255,.15);color:#7eb8ff;margin-right:4px}
-.btn-sm.del{background:rgba(255,107,107,.15);color:#ff6b6b}
+.bs{padding:7px 13px;border:none;border-radius:8px;font-size:12px;cursor:pointer;font-weight:800;font-family:'M PLUS Rounded 1c',sans-serif;background:rgba(74,143,255,.15);color:#7eb8ff;margin-right:4px}
+.bs.del{background:rgba(255,107,107,.15);color:#ff6b6b}
 .ai-result{background:rgba(165,94,234,.1);border:2px solid rgba(165,94,234,.3);border-radius:14px;padding:16px;margin-top:14px}
 .ai-label{color:#c792ff;font-weight:900;font-size:14px;margin-bottom:8px}.ai-val{color:#d4aaff;font-size:14px}
-.stats-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px}
-.stats-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
-@media(max-width:500px){.stats-grid{grid-template-columns:1fr 1fr}}
-.stat{background:rgba(255,255,255,.05);border-radius:14px;padding:16px 18px;border:1px solid rgba(74,143,255,.15)}
-.stat-label{font-size:12px;color:#9bbde0;font-weight:800;margin-bottom:6px}.stat-value{font-size:20px;font-weight:900}
-.table-wrap{overflow-x:auto;border-radius:14px;border:1px solid rgba(74,143,255,.15)}
+.sg{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px}
+.sg2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
+@media(max-width:500px){.sg{grid-template-columns:1fr 1fr}}
+.st-box{background:rgba(255,255,255,.05);border-radius:14px;padding:16px 18px;border:1px solid rgba(74,143,255,.15)}
+.st-label{font-size:12px;color:#9bbde0;font-weight:800;margin-bottom:6px}.st-val{font-size:20px;font-weight:900}
+.tw{overflow-x:auto;border-radius:14px;border:1px solid rgba(74,143,255,.15)}
 table{width:100%;border-collapse:collapse;font-size:13px}
 th{padding:12px 10px;text-align:left;background:rgba(74,143,255,.12);color:#9bbde0;font-size:11px;font-weight:800;white-space:nowrap}
 td{padding:11px 10px;border-bottom:1px solid rgba(74,143,255,.08);color:#c8d8f0;vertical-align:middle}
 tr:last-child td{border-bottom:none}tr:hover td{background:rgba(74,143,255,.06)}.num{font-weight:700;text-align:right}
-.badge{padding:4px 10px;border-radius:8px;font-size:12px;font-weight:800;white-space:nowrap}
-.badge.blue{background:rgba(74,143,255,.2);color:#7eb8ff}.badge.green{background:rgba(38,222,129,.2);color:#26de81}
-.badge.orange{background:rgba(253,150,68,.2);color:#fd9644}.badge.purple{background:rgba(165,94,234,.2);color:#c792ff}
+.bd{padding:4px 10px;border-radius:8px;font-size:12px;font-weight:800;white-space:nowrap}
+.bd.blue{background:rgba(74,143,255,.2);color:#7eb8ff}.bd.green{background:rgba(38,222,129,.2);color:#26de81}
+.bd.orange{background:rgba(253,150,68,.2);color:#fd9644}.bd.purple{background:rgba(165,94,234,.2);color:#c792ff}
 .inv-no{font-family:monospace;font-size:11px;color:#7eb8ff;background:rgba(74,143,255,.12);padding:3px 7px;border-radius:6px;white-space:nowrap}
-.fmt-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px}
-@media(max-width:480px){.fmt-grid{grid-template-columns:1fr}}
-.fmt-card{background:rgba(0,10,30,.4);border-radius:14px;padding:16px;border:1px solid rgba(74,143,255,.15)}
-.fmt-name{font-size:14px;font-weight:900;color:#7eb8ff;margin-bottom:4px}.fmt-desc{font-size:12px;color:#9bbde0}
-.export-row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.export-row select{flex:1;min-width:200px}
+.fg2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px}
+@media(max-width:480px){.fg2{grid-template-columns:1fr}}
+.fc{background:rgba(0,10,30,.4);border-radius:14px;padding:16px;border:1px solid rgba(74,143,255,.15)}
+.fn{font-size:14px;font-weight:900;color:#7eb8ff;margin-bottom:4px}.fd{font-size:12px;color:#9bbde0}
+.er{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.er select{flex:1;min-width:200px}
 .notify{position:fixed;top:16px;right:16px;padding:14px 22px;border-radius:14px;font-weight:800;font-size:14px;font-family:'M PLUS Rounded 1c',sans-serif;z-index:9999;opacity:0;transform:translateY(-12px);transition:all .3s cubic-bezier(.34,1.56,.64,1);pointer-events:none;max-width:340px;box-shadow:0 8px 32px rgba(0,0,0,.4);line-height:1.5}
 .notify.show{opacity:1;transform:none}.notify.success{background:linear-gradient(135deg,#26de81,#20bf6b);color:#fff}
 .notify.error{background:linear-gradient(135deg,#ff6b6b,#ee5a24);color:#fff}.notify.info{background:linear-gradient(135deg,#4a8fff,#2d6dd9);color:#fff}
@@ -315,8 +514,9 @@ tr:last-child td{border-bottom:none}tr:hover td{background:rgba(74,143,255,.06)}
     <div class="logo-sub">✨ AI自動仕訳 ・ レシート読み取り ・ インボイス対応（Google Gemini 無料）</div>
     <div id="api-status" style="font-size:12px;margin-top:4px;font-weight:800"></div>
   </div>
-  <div style="font-size:11px;color:#7eb8ff;font-family:monospace"><span id="api-key-display"></span></div>
+  <div style="font-size:11px;color:#7eb8ff;font-family:monospace"><span id="api-key-disp"></span></div>
 </header>
+
 <div class="api-banner" id="api-banner" style="display:none">
   <div class="api-banner-title">🔑 Google Gemini APIキーを設定してください（完全無料）</div>
   <div class="api-banner-sub">
@@ -324,108 +524,113 @@ tr:last-child td{border-bottom:none}tr:hover td{background:rgba(74,143,255,.06)}
     👉 <strong>https://aistudio.google.com/app/apikey</strong> でキーを作成（AIzaSy... で始まる文字列）<br>
     キーはこのブラウザだけに保存されます。
   </div>
-  <div class="api-input-row">
-    <input type="password" id="api-key-input" placeholder="AIzaSy... を貼り付けてください">
-    <button id="save-api-btn" class="btn btn-orange">💾 保存</button>
+  <div class="api-row">
+    <input type="password" id="key-input" placeholder="AIzaSy... を全部貼り付けてください">
+    <button id="save-key-btn" class="btn btn-og">💾 保存</button>
   </div>
 </div>
+
 <div class="progress-wrap" id="progress-wrap">
-  <div class="progress-text" id="progress-text">読み取り中...</div>
+  <div class="progress-text" id="progress-text">処理中...</div>
   <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
 </div>
+
 <div class="tabs">
   <button class="tab-btn active" data-tab="input">📝 入力</button>
   <button class="tab-btn" data-tab="list">📋 一覧</button>
   <button class="tab-btn" data-tab="export">📤 出力</button>
 </div>
-<div class="tab-panel active" id="panel-input">
+
+<div class="tab-panel active" id="p-input">
   <div class="card">
     <div class="card-title">📸 レシート・請求書を読み取る</div>
     <div class="drop-zone" id="drop-zone">
-      <input type="file" id="receipt-input" accept="image/*" capture="environment">
+      <input type="file" id="rec-input" accept="image/*" capture="environment">
       <span class="dz-icon">🧾</span>
       <div class="dz-text">ここをタップして写真を選択</div>
       <div class="dz-sub">またはドラッグ＆ドロップ ・ JPG / PNG / HEIC 対応</div>
     </div>
-    <div class="receipt-preview" id="receipt-preview"><img id="receipt-img" src="" alt="プレビュー"></div>
+    <div class="rec-prev" id="rec-prev"><img id="rec-img" src="" alt="プレビュー"></div>
     <div style="font-size:13px;color:#9bbde0;margin-top:10px;text-align:center">💡 Google Gemini AIが無料でレシートを自動読み取りします</div>
   </div>
   <div class="card">
-    <div class="card-title" id="edit-label">📝 経費入力</div>
+    <div class="card-title" id="edit-lbl">📝 経費入力</div>
     <form id="journal-form">
-      <div class="form-grid">
-        <label>インボイス番号（自動採番）<input type="text" id="f-invoice" readonly></label>
+      <div class="fg">
+        <label>インボイス番号（自動採番）<input type="text" id="f-inv" readonly></label>
         <label class="req">日付<input type="date" id="f-date" required></label>
       </div>
-      <hr class="divider">
-      <div class="form-grid">
+      <hr class="div">
+      <div class="fg">
         <label>支払先<input type="text" id="f-payee" placeholder="例：〇〇商店、△△株式会社"></label>
         <label>摘要<input type="text" id="f-desc" placeholder="例：タクシー代、会議費"></label>
-        <label class="form-full">品目・内容<input type="text" id="f-item" placeholder="例：食材（野菜・肉類）、コピー用紙A4"></label>
+        <label class="ff">品目・内容<input type="text" id="f-item" placeholder="例：食材（野菜・肉類）、コピー用紙A4"></label>
       </div>
-      <hr class="divider">
-      <div class="form-grid-3">
+      <hr class="div">
+      <div class="fg3">
         <label class="req">税込金額（円）<input type="number" id="f-amount" placeholder="0" min="0" required></label>
-        <label>消費税率<select id="f-taxrate"><option value="10">10%（標準税率）</option><option value="8">8%（軽減税率）</option><option value="0">非課税 / 0%</option></select></label>
-        <label>消費税額（自動計算）<input type="number" id="f-tax" value="0" min="0"></label>
+        <label>消費税率<select id="f-tr"><option value="10">10%（標準税率）</option><option value="8">8%（軽減税率）</option><option value="0">非課税 / 0%</option></select></label>
+        <label>消費税額（自動計算）<input type="number" id="f-tx" value="0" min="0"></label>
       </div>
-      <button type="button" id="ai-btn" class="btn btn-ai" style="margin-top:14px">🤖 AI自動仕訳（摘要・金額入力後クリック）</button>
-      <div class="ai-result" id="ai-result" style="display:none">
-        <div class="ai-label">🎯 AI判定結果（確信度: <span id="ai-conf"></span>）</div>
-        <div class="ai-val">借方: <strong id="ai-debit"></strong> → 貸方: <strong id="ai-credit"></strong></div>
+      <button type="button" id="ai-btn" class="btn btn-ai">🤖 AI自動仕訳（摘要・金額入力後クリック）</button>
+      <div class="ai-result" id="ai-res" style="display:none">
+        <div class="ai-label">🎯 AI判定結果（確信度: <span id="ai-cf"></span>）</div>
+        <div class="ai-val">借方: <strong id="ai-dr"></strong> → 貸方: <strong id="ai-cr"></strong></div>
         <div style="font-size:12px;color:#9bbde0;margin-top:8px">下のプルダウンで手動変更できます ✏️</div>
       </div>
-      <hr class="divider">
-      <div class="form-grid">
-        <label class="req">借方科目<select id="f-debit" required></select></label>
-        <label class="req">貸方科目<select id="f-credit" required></select></label>
+      <hr class="div">
+      <div class="fg">
+        <label class="req">借方科目<select id="f-dr" required></select></label>
+        <label class="req">貸方科目<select id="f-cr" required></select></label>
       </div>
       <div style="display:flex;gap:12px;margin-top:18px;align-items:center">
-        <button type="submit" class="btn btn-success" style="flex:1">✅ 登録する</button>
-        <button type="button" id="cancel-btn" class="btn btn-secondary" style="display:none" onclick="cancelEdit()">✕ キャンセル</button>
+        <button type="submit" class="btn btn-ok" style="flex:1">✅ 登録する</button>
+        <button type="button" id="cancel-btn" class="btn btn-2" style="display:none" onclick="cancelEdit()">✕ キャンセル</button>
       </div>
     </form>
   </div>
 </div>
-<div class="tab-panel" id="panel-list">
-  <div class="stats-grid">
-    <div class="stat"><div class="stat-label">📦 登録件数</div><div class="stat-value stat-count" style="color:#7eb8ff">0件</div></div>
-    <div class="stat"><div class="stat-label">💰 合計金額</div><div class="stat-value stat-total" style="color:#26de81">¥0</div></div>
-    <div class="stat"><div class="stat-label">🧾 消費税合計</div><div class="stat-value stat-tax" style="color:#ffd32a">¥0</div></div>
+
+<div class="tab-panel" id="p-list">
+  <div class="sg">
+    <div class="st-box"><div class="st-label">📦 登録件数</div><div class="st-val sc" style="color:#7eb8ff">0件</div></div>
+    <div class="st-box"><div class="st-label">💰 合計金額</div><div class="st-val st" style="color:#26de81">¥0</div></div>
+    <div class="st-box"><div class="st-label">🧾 消費税合計</div><div class="st-val sx" style="color:#ffd32a">¥0</div></div>
   </div>
-  <div class="stats-grid-2">
-    <div class="stat"><div class="stat-label">🟣 10%（標準税率）</div><div class="stat-value stat-10" style="color:#c792ff;font-size:15px">¥0</div></div>
-    <div class="stat"><div class="stat-label">🟠 8%（軽減税率）</div><div class="stat-value stat-8" style="color:#fd9644;font-size:15px">¥0</div></div>
+  <div class="sg2">
+    <div class="st-box"><div class="st-label">🟣 10%（標準税率）</div><div class="st-val s10" style="color:#c792ff;font-size:15px">¥0</div></div>
+    <div class="st-box"><div class="st-label">🟠 8%（軽減税率）</div><div class="st-val s8" style="color:#fd9644;font-size:15px">¥0</div></div>
   </div>
-  <div class="table-wrap">
+  <div class="tw">
     <table><thead><tr><th>インボイス番号</th><th>日付</th><th>支払先</th><th>摘要</th><th>品目</th><th>借方科目</th><th>貸方科目</th><th style="text-align:right">税込金額</th><th style="text-align:right">税率/税額</th><th>操作</th></tr></thead>
-    <tbody id="journal-tbody"></tbody></table>
+    <tbody id="tbody"></tbody></table>
   </div>
 </div>
-<div class="tab-panel" id="panel-export">
+
+<div class="tab-panel" id="p-export">
   <div class="card">
     <div class="card-title">📊 税率別集計</div>
-    <div class="stats-grid">
-      <div class="stat"><div class="stat-label">📦 登録件数</div><div class="stat-value stat-count" style="color:#7eb8ff">0件</div></div>
-      <div class="stat"><div class="stat-label">💰 合計金額</div><div class="stat-value stat-total" style="color:#26de81">¥0</div></div>
-      <div class="stat"><div class="stat-label">🧾 消費税合計</div><div class="stat-value stat-tax" style="color:#ffd32a">¥0</div></div>
+    <div class="sg">
+      <div class="st-box"><div class="st-label">📦 登録件数</div><div class="st-val sc" style="color:#7eb8ff">0件</div></div>
+      <div class="st-box"><div class="st-label">💰 合計金額</div><div class="st-val st" style="color:#26de81">¥0</div></div>
+      <div class="st-box"><div class="st-label">🧾 消費税合計</div><div class="st-val sx" style="color:#ffd32a">¥0</div></div>
     </div>
-    <div class="stats-grid-2">
-      <div class="stat"><div class="stat-label">🟣 10%（標準税率）</div><div class="stat-value stat-10" style="color:#c792ff;font-size:14px">¥0</div></div>
-      <div class="stat"><div class="stat-label">🟠 8%（軽減税率）</div><div class="stat-value stat-8" style="color:#fd9644;font-size:14px">¥0</div></div>
+    <div class="sg2">
+      <div class="st-box"><div class="st-label">🟣 10%（標準税率）</div><div class="st-val s10" style="color:#c792ff;font-size:14px">¥0</div></div>
+      <div class="st-box"><div class="st-label">🟠 8%（軽減税率）</div><div class="st-val s8" style="color:#fd9644;font-size:14px">¥0</div></div>
     </div>
   </div>
   <div class="card">
     <div class="card-title">📤 CSVエクスポート</div>
-    <div class="fmt-grid">
-      <div class="fmt-card"><div class="fmt-name">📊 汎用CSV</div><div class="fmt-desc">全ソフト対応・インボイス番号付き</div></div>
-      <div class="fmt-card"><div class="fmt-name">🟦 弥生会計</div><div class="fmt-desc">弥生会計・青色申告対応</div></div>
-      <div class="fmt-card"><div class="fmt-name">🟢 freee</div><div class="fmt-desc">freee会計インポート形式</div></div>
-      <div class="fmt-card"><div class="fmt-name">🔵 MFクラウド</div><div class="fmt-desc">マネーフォワードクラウド対応</div></div>
+    <div class="fg2">
+      <div class="fc"><div class="fn">📊 汎用CSV</div><div class="fd">全ソフト対応・インボイス番号付き</div></div>
+      <div class="fc"><div class="fn">🟦 弥生会計</div><div class="fd">弥生会計・青色申告対応</div></div>
+      <div class="fc"><div class="fn">🟢 freee</div><div class="fd">freee会計インポート形式</div></div>
+      <div class="fc"><div class="fn">🔵 MFクラウド</div><div class="fd">マネーフォワードクラウド対応</div></div>
     </div>
-    <div class="export-row">
-      <select id="export-fmt"><option value="汎用">汎用CSV（全ソフト対応）</option><option value="弥生">弥生会計形式</option><option value="freee">freee会計形式</option><option value="MF">マネーフォワードクラウド形式</option></select>
-      <button id="export-btn" class="btn btn-success" style="width:auto;padding:14px 32px">⬇️ ダウンロード</button>
+    <div class="er">
+      <select id="exp-fmt"><option value="汎用">汎用CSV（全ソフト対応）</option><option value="弥生">弥生会計形式</option><option value="freee">freee会計形式</option><option value="MF">マネーフォワードクラウド形式</option></select>
+      <button id="exp-btn" class="btn btn-ok" style="width:auto;padding:14px 32px">⬇️ ダウンロード</button>
     </div>
   </div>
 </div>
