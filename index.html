@@ -317,6 +317,22 @@
     notify("✅ APIキーを保存しました！レシート読み取りが使えます。");
   });
 
+  // ===== 画像をJPEGに変換（HEIC・WEBPなど非対応形式に対応）=====
+  async function convertToJpeg(dataUrl) {
+    return new Promise((resolve)=>{
+      const img = new Image();
+      img.onload = ()=>{
+        const canvas = document.createElement("canvas");
+        canvas.width = img.width;
+        canvas.height = img.height;
+        canvas.getContext("2d").drawImage(img,0,0);
+        resolve(canvas.toDataURL("image/jpeg", 0.92));
+      };
+      img.onerror = ()=>resolve(dataUrl); // 変換失敗時はそのまま
+      img.src = dataUrl;
+    });
+  }
+
   // ===== 画像処理 =====
   async function processFile(file) {
     if (!file) return;
@@ -329,11 +345,20 @@
     const reader = new FileReader();
     reader.onload = async(ev)=>{
       try {
-        const dataUrl = ev.target.result;
+        let dataUrl = ev.target.result;
+        // HEIC・WEBP・非対応形式はJPEGに変換
+        const unsupported = ["image/heic","image/heif","image/webp","image/bmp","image/tiff"];
+        if (!file.type || unsupported.includes(file.type.toLowerCase())) {
+          setProgress("🔄 画像を変換中...", 10);
+          dataUrl = await convertToJpeg(dataUrl);
+        }
         document.getElementById("receipt-img").src = dataUrl;
         document.getElementById("receipt-preview").style.display = "block";
         setProgress("🔍 画像を送信中...", 20);
-        const result = await readReceipt(dataUrl.split(",")[1], file.type||"image/jpeg");
+        // 常にJPEGとして送信
+        const mediaType = dataUrl.startsWith("data:image/jpeg") ? "image/jpeg"
+          : dataUrl.startsWith("data:image/png") ? "image/png" : "image/jpeg";
+        const result = await readReceipt(dataUrl.split(",")[1], mediaType);
         hideProgress();
         if (result.date?.match(/^\d{4}-\d{2}-\d{2}$/)) document.getElementById("f-date").value=result.date;
         if (result.payee)    document.getElementById("f-payee").value=result.payee;
