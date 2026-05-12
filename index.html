@@ -108,10 +108,14 @@
     {kw:["給与","給料","賞与"],d:"6001",c:"1001",r:0},
     {kw:["仕入","材料","食材"],d:"5001",c:"2001",r:8},
   ];
+  // 非課税科目コードセット
+  const NON_TAX_SET = new Set(["6401","1700","1701"]);
+
   function localJ(desc,amount,rate) {
     for(const r of RULES) {
       if(r.kw.some(k=>desc.includes(k))) {
-        const rt=rate??r.r;
+        // 非課税科目またはルールのレートが0なら強制0
+        const rt = (NON_TAX_SET.has(r.d) || r.r===0) ? 0 : (rate??r.r);
         return {debit:r.d,debitName:accName(r.d),credit:r.c,creditName:accName(r.c),taxRate:rt,taxAmount:tax(amount,rt),confidence:0.85};
       }
     }
@@ -180,10 +184,19 @@ JSON format: {"date":"YYYY-MM-DD","payee":"店名または支払先","desc":"摘
       const prompt=`Japanese bookkeeping. Return ONLY JSON, no other text.
 Input: desc="${desc}" item="${item}" payee="${payee}" amount=${amount}yen taxRate=${rate}%
 Accounts: ${ACCS.map(a=>a.c+":"+a.n).join(",")}
+IMPORTANT: 租税公課(6401)は必ずtaxRate=0, taxAmount=0にすること。収入印紙・印紙・証紙・登録免許税・固定資産税・自動車税は租税公課(6401)で非課税。
 JSON: {"debit":"code","debitName":"name","credit":"code","creditName":"name","taxAmount":integer,"taxRate":integer,"confidence":float}`;
       const text=await callGemini([{text:prompt}]);
       const m=text.replace(/```json\s*/gi,"").replace(/```\s*/g,"").match(/\{[\s\S]*\}/);
-      return m?JSON.parse(m[0]):localJ(desc||item,amount,rate);
+      if(!m) return localJ(desc||item,amount,rate);
+      const parsed = JSON.parse(m[0]);
+      // 非課税科目なら戻り値も強制0
+      const dc = String(parsed.debit||"");
+      if(NON_TAX_SET.has(dc) || (parsed.debitName||"").includes("租税") || (parsed.debitName||"").includes("公課")) {
+        parsed.taxRate = 0;
+        parsed.taxAmount = 0;
+      }
+      return parsed;
     }catch{return localJ(desc||item,amount,rate);}
   }
 
@@ -423,9 +436,31 @@ JSON: {"debit":"code","debitName":"name","credit":"code","creditName":"name","ta
     btn.textContent="⏳ AI判定中...";btn.disabled=true;
     const r=await aiJournal(desc,item,payee,amount,rate);
     btn.textContent="🤖 AI自動仕訳";btn.disabled=false;
-    $s("f-dr",r.debit||"6501");$s("f-cr",r.credit||"1001");
-    $s("f-tx",r.taxAmount||tax(amount,rate));
-    if(r.taxRate!=null) $s("f-tr",r.taxRate);
+
+    // 借方科目をセット
+    const debitCode = String(r.debit||"6501");
+    $s("f-dr", debitCode);
+    $s("f-cr", r.credit||"1001");
+
+    // 非課税科目リスト（これらは必ず消費税0%）
+    const NON_TAX_CODES = ["6401","1700","1701"];
+    const NON_TAX_NAMES = ["租税","公課","印紙","証紙","非課税"];
+    const isNonTax = NON_TAX_CODES.includes(debitCode)
+      || NON_TAX_NAMES.some(w => (r.debitName||"").includes(w))
+      || NON_TAX_NAMES.some(w => desc.includes(w) || item.includes(w));
+
+    if(isNonTax) {
+      // 非課税：消費税率・消費税額を強制0
+      document.getElementById("f-tr").value = "0";
+      document.getElementById("f-tx").value = "0";
+      notify("💡 租税公課は非課税（0%）に自動設定しました","info");
+    } else {
+      // 課税：AIの結果を反映
+      const newRate = (r.taxRate!=null) ? String(r.taxRate) : String(rate);
+      document.getElementById("f-tr").value = newRate;
+      const newTax = (r.taxAmount!=null) ? r.taxAmount : tax(amount, parseInt(newRate)||10);
+      document.getElementById("f-tx").value = String(newTax);
+    }
     document.getElementById("ai-res").style.display="block";
     document.getElementById("ai-dr").textContent=r.debitName||"";
     document.getElementById("ai-cr").textContent=r.creditName||"";
