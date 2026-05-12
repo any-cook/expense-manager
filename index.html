@@ -83,9 +83,9 @@
   function accName(c) { return ACCS.find(a=>a.c===c)?.n||c; }
 
   function invNo() {
-    const d=new Date(), y=d.getFullYear().toString().slice(2)
-      +String(d.getMonth()+1).padStart(2,"0")+String(d.getDate()).padStart(2,"0");
-    return "INV-"+y+"-"+String(Math.floor(Math.random()*9000)+1000);
+    // インボイス番号は「T」プレフィックス付きで入力欄に表示
+    // ここでは番号部分のみ返す（Tは入力欄の外に固定表示）
+    return "";
   }
   function tax(a,r) { return(!r||r===0)?0:Math.round(a-Math.round(a*100/(r===8?108:110))); }
 
@@ -313,7 +313,7 @@ JSON: {"debit":"code","debitName":"name","credit":"code","creditName":"name","ta
     const j=journals.find(x=>x.id===id);if(!j)return;
     editId=null; // 新規登録として扱う
     // インボイス番号は複写元をそのまま引き継ぐ
-    $s("f-inv",j.inv||"");
+    $s("f-inv",(j.inv||"").replace(/^T/,"").replace(/^インボイス登録なし$/,""));
     // 今日の日付をセット
     $s("f-date",new Date().toISOString().slice(0,10));
     // その他の項目はコピー元と同じ
@@ -338,7 +338,7 @@ JSON: {"debit":"code","debitName":"name","credit":"code","creditName":"name","ta
   window.startEdit=function(id){
     const j=journals.find(x=>x.id===id);if(!j)return;
     editId=id;
-    $s("f-inv",j.inv||"");$s("f-date",j.date||"");$s("f-payee",j.payee||"");
+    $s("f-inv",(j.inv||"").replace(/^T/,"").replace(/^インボイス登録なし$/,""));$s("f-date",j.date||"");$s("f-payee",j.payee||"");
     $s("f-desc",j.desc||"");$s("f-item",j.item||"");$s("f-amount",j.amount||"");
     $s("f-tr",j.tRate||10);$s("f-tx",j.tAmt||0);
     $s("f-dr",j.debit||"");$s("f-cr",j.credit||"");
@@ -349,7 +349,7 @@ JSON: {"debit":"code","debitName":"name","credit":"code","creditName":"name","ta
   window.cancelEdit=function(){
     editId=null;document.getElementById("journal-form").reset();
     $s("f-date",new Date().toISOString().slice(0,10));
-    $s("f-inv",invNo());$s("f-tr",10);$s("f-tx",0);
+    $s("f-inv","");$s("f-tr",10);$s("f-tx",0);
     document.getElementById("edit-lbl").textContent="📝 経費入力";
     document.getElementById("cancel-btn").style.display="none";
     document.getElementById("ai-res").style.display="none";
@@ -472,7 +472,7 @@ JSON: {"debit":"code","debitName":"name","credit":"code","creditName":"name","ta
     e.preventDefault();
     const dc=$v("f-dr"),cc=$v("f-cr"),tr=parseInt($v("f-tr"))||10,amt=parseInt($v("f-amount"))||0;
     const j={
-      id:editId||null,inv:$v("f-inv")||invNo(),date:$v("f-date"),
+      id:editId||null,inv:$v("f-inv")?"T"+$v("f-inv").replace(/^T/,""):"インボイス登録なし",date:$v("f-date"),
       payee:$v("f-payee").trim(),desc:$v("f-desc").trim(),item:$v("f-item").trim(),
       amount:amt,tRate:tr,tAmt:parseInt($v("f-tx"))||tax(amt,tr),
       debit:dc,dName:accName(dc),credit:cc,cName:accName(cc),
@@ -498,7 +498,7 @@ JSON: {"debit":"code","debitName":"name","credit":"code","creditName":"name","ta
   document.getElementById("f-dr").innerHTML=`<option value="">-- 借方科目を選択 --</option>${opts}`;
   document.getElementById("f-cr").innerHTML=`<option value="">-- 貸方科目を選択 --</option>${opts}`;
   $s("f-date",new Date().toISOString().slice(0,10));
-  $s("f-inv",invNo());
+  $s("f-inv",""); // Tは入力欄の外に固定表示
 
   // 会社選択カードを生成
   const grid=document.getElementById("company-grid");
@@ -678,7 +678,12 @@ tr:last-child td{border-bottom:none}tr:hover td{background:rgba(74,143,255,.06)}
       <div class="card-title" id="edit-lbl">📝 経費入力</div>
       <form id="journal-form">
         <div class="fg">
-          <label>インボイス番号（自動採番・直接入力可）<input type="text" id="f-inv" placeholder="例：T1234567890123"></label>
+          <label>インボイス番号（自動採番・直接入力可）
+  <div style="display:flex;align-items:center;gap:0">
+    <span style="background:rgba(74,143,255,.15);border:2px solid rgba(74,143,255,.4);border-right:none;border-radius:12px 0 0 12px;padding:12px 10px 12px 14px;color:#7eb8ff;font-weight:900;font-size:15px;white-space:nowrap">T</span>
+    <input type="text" id="f-inv" placeholder="1234567890123" style="border-radius:0 12px 12px 0;border-left:none">
+  </div>
+</label>
           <label class="req">日付<input type="date" id="f-date" required></label>
         </div>
         <hr class="div">
