@@ -299,8 +299,8 @@ JSON: {"debit":"code","debitName":"name","credit":"code","creditName":"name","ta
   window.copyJournal=function(id){
     const j=journals.find(x=>x.id===id);if(!j)return;
     editId=null; // 新規登録として扱う
-    // 新しいインボイス番号を採番
-    $s("f-inv",invNo());
+    // インボイス番号は複写元をそのまま引き継ぐ
+    $s("f-inv",j.inv||"");
     // 今日の日付をセット
     $s("f-date",new Date().toISOString().slice(0,10));
     // その他の項目はコピー元と同じ
