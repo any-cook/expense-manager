@@ -288,11 +288,39 @@ JSON: {"debit":"code","debitName":"name","credit":"code","creditName":"name","ta
       <td><span class="bd green">${j.cName||""}</span></td>
       <td class="num">¥${Number(j.amount||0).toLocaleString()}</td>
       <td class="num"><span class="bd ${Number(j.tRate||10)===8?"orange":"purple"}">${j.tRate||10}%</span><div style="margin-top:3px">¥${Number(j.tAmt||0).toLocaleString()}</div></td>
-      <td><button class="bs" onclick="startEdit('${j.id}')">編集</button><button class="bs del" onclick="delJournal('${j.id}')">削除</button></td>
+      <td><button class="bs copy" onclick="copyJournal('${j.id}')">複写</button><button class="bs" onclick="startEdit('${j.id}')">編集</button><button class="bs del" onclick="delJournal('${j.id}')">削除</button></td>
     </tr>`).join("");
   }
 
   window.delJournal=delJ;
+
+  // ===== 複写機能 =====
+  window.copyJournal=function(id){
+    const j=journals.find(x=>x.id===id);if(!j)return;
+    editId=null; // 新規登録として扱う
+    // 新しいインボイス番号を採番
+    $s("f-inv",invNo());
+    // 今日の日付をセット
+    $s("f-date",new Date().toISOString().slice(0,10));
+    // その他の項目はコピー元と同じ
+    $s("f-payee",j.payee||"");
+    $s("f-desc",j.desc||"");
+    $s("f-item",j.item||"");
+    $s("f-amount",j.amount||"");
+    $s("f-tr",j.tRate||10);
+    $s("f-tx",j.tAmt||0);
+    $s("f-dr",j.debit||"");
+    $s("f-cr",j.credit||"");
+    document.getElementById("edit-lbl").textContent="📋 複写入力（新規登録）";
+    document.getElementById("cancel-btn").style.display="inline-flex";
+    document.getElementById("ai-res").style.display="none";
+    document.getElementById("rec-prev").style.display="none";
+    document.getElementById("rec-img").src="";
+    hideProgress();
+    tabSwitch("input");window.scrollTo(0,0);
+    notify("📋 複写しました！内容を確認して「登録する」を押してください。","info");
+  };
+
   window.startEdit=function(id){
     const j=journals.find(x=>x.id===id);if(!j)return;
     editId=id;
@@ -506,7 +534,7 @@ select option{background:#1a2744}.div{border:none;border-top:1px solid rgba(74,1
 .btn-og{background:linear-gradient(135deg,#fd9644,#e55039);color:#fff;padding:12px 24px;width:auto}
 .btn:hover{opacity:.9;transform:translateY(-2px)}
 .bs{padding:7px 13px;border:none;border-radius:8px;font-size:12px;cursor:pointer;font-weight:800;font-family:'M PLUS Rounded 1c',sans-serif;background:rgba(74,143,255,.15);color:#7eb8ff;margin-right:4px}
-.bs.del{background:rgba(255,107,107,.15);color:#ff6b6b}
+.bs.del{background:rgba(255,107,107,.15);color:#ff6b6b}.bs.copy{background:rgba(255,214,68,.15);color:#ffd32a}
 .ai-result{background:rgba(165,94,234,.1);border:2px solid rgba(165,94,234,.3);border-radius:14px;padding:16px;margin-top:14px}
 .ai-label{color:#c792ff;font-weight:900;font-size:14px;margin-bottom:8px}.ai-val{color:#d4aaff;font-size:14px}
 .sg{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px}
