@@ -104,6 +104,7 @@
     {kw:["会議","打合せ"],d:"6301",c:"1001",r:10},
     {kw:["本","雑誌","書籍","新聞"],d:"6302",c:"1001",r:8},
     {kw:["手数料","振込"],d:"6303",c:"1002",r:10},
+    {kw:["収入印紙","証紙","印紙","収入証紙","租税","公課","登録免許税","固定資産税","自動車税","印鑑証明"],d:"6401",c:"1001",r:0},
     {kw:["給与","給料","賞与"],d:"6001",c:"1001",r:0},
     {kw:["仕入","材料","食材"],d:"5001",c:"2001",r:8},
   ];
@@ -197,13 +198,13 @@ JSON: {"debit":"code","debitName":"name","credit":"code","creditName":"name","ta
   function doCSV(js,fmt,coName) {
     const B="\uFEFF";let c="";
     if(fmt==="汎用") c="会社名,インボイス番号,日付,支払先,摘要,品目・内容,借方科目,貸方科目,税込金額,消費税率,消費税額\n"
-      +js.map(j=>`${coName},${j.inv||""},${j.date},"${j.payee||""}","${j.desc||""}","${j.item||""}",${j.dName},${j.cName},${j.amount},${j.tRate||10}%,${j.tAmt||0}`).join("\n");
+      +js.map(j=>`${coName},${j.inv||"インボイス登録なし"},${j.date},"${j.payee||""}","${j.desc||""}","${j.item||""}",${j.dName},${j.cName},${j.amount},${j.tRate||10}%,${j.tAmt||0}`).join("\n");
     else if(fmt==="弥生") c="識別フラグ,伝票日付,借方勘定科目,借方税区分,借方金額,借方消費税額,貸方勘定科目,貸方金額,摘要,インボイス番号\n"
-      +js.map(j=>`2000,${j.date.replace(/-/g,"/")},,${j.dName},課税仕入${j.tRate||10}%,${j.amount},${j.tAmt||0},${j.cName},${j.amount},"${j.desc||""}",${j.inv||""}`).join("\n");
+      +js.map(j=>`2000,${j.date.replace(/-/g,"/")},,${j.dName},課税仕入${j.tRate||10}%,${j.amount},${j.tAmt||0},${j.cName},${j.amount},"${j.desc||""}",${j.inv||"インボイス登録なし"}`).join("\n");
     else if(fmt==="freee") c="発生日,勘定科目,支払先,金額（円）,税区分,備考,インボイス番号\n"
-      +js.map(j=>`${j.date},${j.dName},"${j.payee||""}",${j.amount},課税仕入(${j.tRate||10}%),"${j.desc||""}",${j.inv||""}`).join("\n");
+      +js.map(j=>`${j.date},${j.dName},"${j.payee||""}",${j.amount},課税仕入(${j.tRate||10}%),"${j.desc||""}",${j.inv||"インボイス登録なし"}`).join("\n");
     else if(fmt==="MF") c="取引日,借方勘定科目,借方税区分,借方金額,貸方勘定科目,貸方金額,摘要,インボイス番号\n"
-      +js.map(j=>`${j.date},${j.dName},${j.tRate||10}%,${j.amount},${j.cName},${j.amount},"${j.desc||""}",${j.inv||""}`).join("\n");
+      +js.map(j=>`${j.date},${j.dName},${j.tRate||10}%,${j.amount},${j.cName},${j.amount},"${j.desc||""}",${j.inv||"インボイス登録なし"}`).join("\n");
     const a=document.createElement("a");
     a.href=URL.createObjectURL(new Blob([B+c],{type:"text/csv;charset=utf-8;"}));
     a.download=coName+"_経費仕訳_"+fmt+"_"+new Date().toISOString().slice(0,10)+".csv";
@@ -279,7 +280,7 @@ JSON: {"debit":"code","debitName":"name","credit":"code","creditName":"name","ta
     const tb=document.getElementById("tbody");
     if(!journals.length){tb.innerHTML='<tr><td colspan="10" style="text-align:center;color:#aaa;padding:50px;font-size:16px">📭 データがありません</td></tr>';return;}
     tb.innerHTML=journals.map(j=>`<tr>
-      <td><span class="inv-no">${j.inv||"-"}</span></td>
+      <td><span class="inv-no">${j.inv||"インボイス登録なし"}</span></td>
       <td style="white-space:nowrap">${j.date||""}</td>
       <td>${(j.payee||"-").slice(0,10)}${(j.payee||"").length>10?"…":""}</td>
       <td>${(j.desc||"-").slice(0,12)}${(j.desc||"").length>12?"…":""}</td>
@@ -345,6 +346,17 @@ JSON: {"debit":"code","debitName":"name","credit":"code","creditName":"name","ta
   };
 
   document.getElementById("f-amount").addEventListener("input",()=>{const a=parseInt($v("f-amount"))||0,r=parseInt($v("f-tr"))||10;$s("f-tx",tax(a,r));});
+
+  // 借方科目が租税公課(6401)に変わったら消費税率を自動で非課税(0%)にする
+  document.getElementById("f-dr").addEventListener("change",()=>{
+    const dc=$v("f-dr");
+    // 租税公課は非課税
+    if(dc==="6401"){
+      $s("f-tr",0);
+      $s("f-tx",0);
+      notify("💡 租税公課（収入印紙・証紙など）は非課税に自動設定しました","info");
+    }
+  });
   document.getElementById("f-tr").addEventListener("change",()=>{const a=parseInt($v("f-amount"))||0,r=parseInt($v("f-tr"))||10;$s("f-tx",tax(a,r));});
 
   // APIキー保存
@@ -378,7 +390,11 @@ JSON: {"debit":"code","debitName":"name","credit":"code","creditName":"name","ta
         if(r.amount>0) $s("f-amount",r.amount);
         if(r.taxRate!=null) $s("f-tr",r.taxRate);
         if(r.taxAmount!=null) $s("f-tx",r.taxAmount);
-        if(r.debit)  $s("f-dr",r.debit);
+        if(r.debit)  {
+          $s("f-dr",r.debit);
+          // レシート読み取りで租税公課が選ばれた場合も非課税にする
+          if(r.debit==="6401"){ $s("f-tr",0); $s("f-tx",0); }
+        }
         if(r.credit) $s("f-cr",r.credit);
         document.getElementById("ai-res").style.display="block";
         document.getElementById("ai-dr").textContent=r.debitName||"-";
