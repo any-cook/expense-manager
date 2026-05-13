@@ -113,6 +113,22 @@
   // 非課税科目コードセット
   const NON_TAX_SET = new Set(["6401","1700","1701"]);
 
+  // 売上科目コードセット（収益）
+  const SALES_CODES = new Set(["4001"]);
+  // 経費科目コードセット（費用）
+  const EXPENSE_CODES = new Set([
+    "5001","6001","6101","6102","6103","6201","6202","6203","6204",
+    "6205","6206","6207","6208","6209","6301","6302","6303","6401",
+    "6501","6502","6503"
+  ]);
+
+  // 分類判定
+  function getCategory(j) {
+    if(SALES_CODES.has(j.debit||"")) return "sales";
+    if(EXPENSE_CODES.has(j.debit||"")) return "expense";
+    return "other";
+  }
+
   function localJ(desc,amount,rate) {
     for(const r of RULES) {
       if(r.kw.some(k=>desc.includes(k))) {
@@ -228,6 +244,7 @@ JSON: {"debit":"code","debitName":"name","credit":"code","creditName":"name","ta
 
   // ===== Firebase =====
   let journals=[],editId=null;
+  let filterMonth="", filterCat="all"; // 月別・分類フィルター
 
   // 会社ごとのFirestoreパス
   function journalCol() {
@@ -279,22 +296,46 @@ JSON: {"debit":"code","debitName":"name","credit":"code","creditName":"name","ta
     if(t==="list"||t==="export"){renderList();stats();}
   }
 
+  // フィルター適用
+  function applyFilter(list) {
+    return list.filter(j=>{
+      const monthOK = !filterMonth || (j.date||"").startsWith(filterMonth);
+      const catOK   = filterCat==="all"
+        || (filterCat==="sales"   && getCategory(j)==="sales")
+        || (filterCat==="expense" && getCategory(j)==="expense");
+      return monthOK && catOK;
+    });
+  }
+
   function stats() {
-    const j10=journals.filter(j=>Number(j.tRate||10)===10);
-    const j8=journals.filter(j=>Number(j.tRate||10)===8);
+    const filtered = applyFilter(journals);
+    const j10=filtered.filter(j=>Number(j.tRate||10)===10);
+    const j8=filtered.filter(j=>Number(j.tRate||10)===8);
     const t10=j10.reduce((s,j)=>s+Number(j.amount||0),0),x10=j10.reduce((s,j)=>s+Number(j.tAmt||0),0);
     const t8=j8.reduce((s,j)=>s+Number(j.amount||0),0),x8=j8.reduce((s,j)=>s+Number(j.tAmt||0),0);
-    document.querySelectorAll(".sc").forEach(el=>el.textContent=journals.length+"件");
+    const sales=filtered.filter(j=>getCategory(j)==="sales").reduce((s,j)=>s+Number(j.amount||0),0);
+    const expense=filtered.filter(j=>getCategory(j)==="expense").reduce((s,j)=>s+Number(j.amount||0),0);
+    document.querySelectorAll(".sc").forEach(el=>el.textContent=filtered.length+"件");
     document.querySelectorAll(".st").forEach(el=>el.textContent="¥"+(t10+t8).toLocaleString());
     document.querySelectorAll(".sx").forEach(el=>el.textContent="¥"+(x10+x8).toLocaleString());
     document.querySelectorAll(".s10").forEach(el=>el.textContent="¥"+t10.toLocaleString()+"（税額¥"+x10.toLocaleString()+"）");
     document.querySelectorAll(".s8").forEach(el=>el.textContent="¥"+t8.toLocaleString()+"（税額¥"+x8.toLocaleString()+"）");
+    // 売上・経費別集計
+    const sEl=document.getElementById("stat-sales"); if(sEl) sEl.textContent="¥"+sales.toLocaleString();
+    const eEl=document.getElementById("stat-expense"); if(eEl) eEl.textContent="¥"+expense.toLocaleString();
+    const bEl=document.getElementById("stat-balance"); if(bEl){
+      const bal=sales-expense;
+      bEl.textContent=(bal>=0?"▲":"▼")+"¥"+Math.abs(bal).toLocaleString();
+      bEl.style.color=bal>=0?"#26de81":"#ff6b6b";
+    }
   }
 
   function renderList() {
     const tb=document.getElementById("tbody");
-    if(!journals.length){tb.innerHTML='<tr><td colspan="10" style="text-align:center;color:#aaa;padding:50px;font-size:16px">📭 データがありません</td></tr>';return;}
-    tb.innerHTML=journals.map(j=>`<tr>
+    const filtered=applyFilter(journals);
+    if(!filtered.length){tb.innerHTML='<tr><td colspan="10" style="text-align:center;color:#aaa;padding:50px;font-size:16px">📭 データがありません</td></tr>';return;}
+    tb.innerHTML=filtered.map(j=>`<tr>
+      <td>${getCategory(j)==="sales"?'<span class="bd" style="background:rgba(38,222,129,.2);color:#26de81">💰 売上</span>':getCategory(j)==="expense"?'<span class="bd" style="background:rgba(253,150,68,.2);color:#fd9644">📋 経費</span>':'<span class="bd" style="background:rgba(255,255,255,.1);color:#aaa">その他</span>'}</td>
       <td><span class="inv-no">${j.inv||"インボイス登録なし"}</span></td>
       <td style="white-space:nowrap">${j.date||""}</td>
       <td>${(j.payee||"-").slice(0,10)}${(j.payee||"").length>10?"…":""}</td>
@@ -307,6 +348,24 @@ JSON: {"debit":"code","debitName":"name","credit":"code","creditName":"name","ta
       <td><button class="bs copy" onclick="copyJournal('${j.id}')">複写</button><button class="bs" onclick="startEdit('${j.id}')">編集</button><button class="bs del" onclick="delJournal('${j.id}')">削除</button></td>
     </tr>`).join("");
   }
+
+  // ===== フィルター操作 =====
+  window.setCat=function(cat){
+    filterCat=cat;
+    document.querySelectorAll(".fcat-btn").forEach(b=>b.classList.toggle("active",b.dataset.cat===cat));
+    renderList();stats();
+  };
+  window.clearFilter=function(){
+    filterMonth="";filterCat="all";
+    document.getElementById("filter-month").value="";
+    document.querySelectorAll(".fcat-btn").forEach(b=>b.classList.toggle("active",b.dataset.cat==="all"));
+    renderList();stats();
+    notify("フィルターをクリアしました","info");
+  };
+  document.getElementById("filter-month").addEventListener("change",function(){
+    filterMonth=this.value; // "2025-05" 形式
+    renderList();stats();
+  });
 
   window.delJournal=delJ;
 
@@ -587,7 +646,13 @@ select option{background:#1a2744}.div{border:none;border-top:1px solid rgba(74,1
 .btn-og{background:linear-gradient(135deg,#fd9644,#e55039);color:#fff;padding:12px 24px;width:auto}
 .btn:hover{opacity:.9;transform:translateY(-2px)}
 .bs{padding:7px 13px;border:none;border-radius:8px;font-size:12px;cursor:pointer;font-weight:800;font-family:'M PLUS Rounded 1c',sans-serif;background:rgba(74,143,255,.15);color:#7eb8ff;margin-right:4px}
-.bs.del{background:rgba(255,107,107,.15);color:#ff6b6b}.bs.copy{background:rgba(255,214,68,.15);color:#ffd32a}
+.bs.del{background:rgba(255,107,107,.15);color:#ff6b6b}
+.bs.copy{background:rgba(255,214,68,.15);color:#ffd32a}
+.sg3ec{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px}
+@media(max-width:600px){.sg3ec{grid-template-columns:1fr}}
+.fcat-btn{padding:9px 16px;border:2px solid rgba(74,143,255,.3);border-radius:10px;background:rgba(255,255,255,.06);color:#9bbde0;font-size:13px;font-weight:800;cursor:pointer;font-family:'M PLUS Rounded 1c',sans-serif;transition:all .15s}
+.fcat-btn.active{background:rgba(74,143,255,.2);color:#7eb8ff;border-color:#4a8fff}
+.fcat-btn:hover:not(.active){background:rgba(255,255,255,.12)}.bs.copy{background:rgba(255,214,68,.15);color:#ffd32a}
 .ai-result{background:rgba(165,94,234,.1);border:2px solid rgba(165,94,234,.3);border-radius:14px;padding:16px;margin-top:14px}
 .ai-label{color:#c792ff;font-weight:900;font-size:14px;margin-bottom:8px}.ai-val{color:#d4aaff;font-size:14px}
 .sg{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px}
@@ -721,9 +786,36 @@ tr:last-child td{border-bottom:none}tr:hover td{background:rgba(74,143,255,.06)}
 
   <!-- 一覧 -->
   <div class="tab-panel" id="p-list">
+
+    <!-- フィルターUI -->
+    <div class="card" style="padding:16px 20px;margin-bottom:14px">
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+        <div style="display:flex;flex-direction:column;gap:5px;flex:1;min-width:150px">
+          <label style="font-size:12px;color:#9bbde0;font-weight:800">📅 月を選択</label>
+          <input type="month" id="filter-month" style="padding:9px 12px;font-size:14px;border-radius:10px;background:rgba(0,10,30,.5);border:2px solid rgba(74,143,255,.3);color:#e8eaf0;outline:none">
+        </div>
+        <div style="display:flex;flex-direction:column;gap:5px">
+          <label style="font-size:12px;color:#9bbde0;font-weight:800">📊 分類</label>
+          <div style="display:flex;gap:8px">
+            <button class="fcat-btn active" data-cat="all"  onclick="setCat('all')">すべて</button>
+            <button class="fcat-btn"        data-cat="sales"   onclick="setCat('sales')">💰 売上</button>
+            <button class="fcat-btn"        data-cat="expense" onclick="setCat('expense')">📋 経費</button>
+          </div>
+        </div>
+        <button onclick="clearFilter()" style="padding:9px 16px;border:none;border-radius:10px;background:rgba(255,255,255,.08);color:#9bbde0;font-size:13px;font-weight:700;cursor:pointer;align-self:flex-end;font-family:inherit">✕ クリア</button>
+      </div>
+    </div>
+
+    <!-- 売上・経費・収支集計 -->
+    <div class="sg3ec">
+      <div class="sb"><div class="sl">💰 売上合計</div><div class="sv" id="stat-sales" style="color:#26de81">¥0</div></div>
+      <div class="sb"><div class="sl">📋 経費合計</div><div class="sv" id="stat-expense" style="color:#fd9644">¥0</div></div>
+      <div class="sb"><div class="sl">📈 収支（売上－経費）</div><div class="sv" id="stat-balance" style="color:#26de81">¥0</div></div>
+    </div>
+
     <div class="sg">
-      <div class="sb"><div class="sl">📦 登録件数</div><div class="sv sc" style="color:#7eb8ff">0件</div></div>
-      <div class="sb"><div class="sl">💰 合計金額</div><div class="sv st" style="color:#26de81">¥0</div></div>
+      <div class="sb"><div class="sl">📦 件数</div><div class="sv sc" style="color:#7eb8ff">0件</div></div>
+      <div class="sb"><div class="sl">💴 合計金額</div><div class="sv st" style="color:#e8eaf0">¥0</div></div>
       <div class="sb"><div class="sl">🧾 消費税合計</div><div class="sv sx" style="color:#ffd32a">¥0</div></div>
     </div>
     <div class="sg2">
@@ -731,7 +823,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:rgba(74,143,255,.06)}
       <div class="sb"><div class="sl">🟠 8%（軽減税率）</div><div class="sv s8" style="color:#fd9644;font-size:15px">¥0</div></div>
     </div>
     <div class="tw">
-      <table><thead><tr><th>インボイス番号</th><th>日付</th><th>支払先</th><th>摘要</th><th>品目</th><th>借方科目</th><th>貸方科目</th><th style="text-align:right">税込金額</th><th style="text-align:right">税率/税額</th><th>操作</th></tr></thead>
+      <table><thead><tr><th>分類</th><th>インボイス番号</th><th>日付</th><th>支払先</th><th>摘要</th><th>品目</th><th>借方科目</th><th>貸方科目</th><th style="text-align:right">税込金額</th><th style="text-align:right">税率/税額</th><th>操作</th></tr></thead>
       <tbody id="tbody"></tbody></table>
     </div>
   </div>
