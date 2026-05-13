@@ -112,6 +112,14 @@
   // 非課税科目コードセット
   const NON_TAX_SET = new Set(["6401","1700","1701"]);
 
+  // 取引区分ごとのデフォルト借方・貸方設定
+  const TXN_TYPE = {
+    income:   { label:"💰 収入", debit:"1001", credit:"4001" }, // 現金 / 売上高
+    expense:  { label:"📋 支出", debit:"6501", credit:"1001" }, // 雑費 / 現金
+    transfer: { label:"🔄 振替", debit:"1002", credit:"1001" }, // 普通預金 / 現金
+  };
+  let keepForm = false; // 連続登録フラグ
+
   // 売上科目コードセット（収益）
   const SALES_CODES = new Set(["4001"]);
   // 経費科目コードセット（費用）
@@ -121,9 +129,12 @@
     "6501","6502","6503"
   ]);
 
-  // 分類判定
+  // 分類判定（取引区分が設定されていればそちらを優先）
   function getCategory(j) {
-    if(SALES_CODES.has(j.debit||"")) return "sales";
+    if(j.txType==="income")   return "sales";
+    if(j.txType==="expense")  return "expense";
+    if(j.txType==="transfer") return "transfer";
+    if(SALES_CODES.has(j.debit||""))   return "sales";
     if(EXPENSE_CODES.has(j.debit||"")) return "expense";
     return "other";
   }
@@ -348,6 +359,25 @@ JSON: {"debit":"code","debitName":"name","credit":"code","creditName":"name","ta
     </tr>`).join("");
   }
 
+  // ===== 取引区分 =====
+  window.setTxnType=function(type){
+    // ボタンのアクティブ状態切替
+    document.querySelectorAll(".txn-btn").forEach(b=>b.classList.toggle("active",b.dataset.txn===type));
+    const t=TXN_TYPE[type];
+    if(!t) return;
+    // 借方・貸方を自動セット
+    $s("f-dr", t.debit);
+    $s("f-cr", t.credit);
+    // 収入の場合は消費税率を10%に、振替は非課税に
+    if(type==="transfer"){ $s("f-tr","0"); $s("f-tx","0"); }
+    else if(type==="income"){ $s("f-tr","10"); }
+  };
+
+  // 連続登録チェック状態を取得
+  function getKeepForm(){
+    return document.getElementById("keep-form")?.checked || false;
+  }
+
   // ===== フィルター操作 =====
   window.setCat=function(cat){
     filterCat=cat;
@@ -539,9 +569,29 @@ JSON: {"debit":"code","debitName":"name","credit":"code","creditName":"name","ta
     };
     if(!j.date||!j.amount||!j.debit||!j.credit){notify("必須項目（✳）を入力してください","error");return;}
     const saved=await saveJ(j);
-    if(editId){journals=journals.map(x=>x.id===editId?saved:x);notify("✅ 更新しました！");}
-    else{journals.unshift(saved);notify("✅ 登録しました！");}
-    cancelEdit();stats();
+    keepForm=getKeepForm();
+    if(editId){
+      journals=journals.map(x=>x.id===editId?saved:x);
+      notify("✅ 更新しました！");
+      cancelEdit();
+    } else {
+      journals.unshift(saved);
+      notify("✅ 登録しました！");
+      if(keepForm) {
+        // 連続登録：金額と消費税額だけリセット、他はそのまま
+        editId=null;
+        $s("f-amount","");
+        $s("f-tx","0");
+        $s("f-inv","");
+        document.getElementById("ai-res").style.display="none";
+        document.getElementById("rec-prev").style.display="none";
+        document.getElementById("rec-img").src="";
+        hideProgress();
+      } else {
+        cancelEdit();
+      }
+    }
+    stats();
   });
 
   document.querySelectorAll(".tab-btn").forEach(b=>b.addEventListener("click",()=>tabSwitch(b.dataset.tab)));
@@ -651,7 +701,12 @@ select option{background:#1a2744}.div{border:none;border-top:1px solid rgba(74,1
 @media(max-width:600px){.sg3ec{grid-template-columns:1fr}}
 .fcat-btn{padding:9px 16px;border:2px solid rgba(74,143,255,.3);border-radius:10px;background:rgba(255,255,255,.06);color:#9bbde0;font-size:13px;font-weight:800;cursor:pointer;font-family:'M PLUS Rounded 1c',sans-serif;transition:all .15s}
 .fcat-btn.active{background:rgba(74,143,255,.2);color:#7eb8ff;border-color:#4a8fff}
-.fcat-btn:hover:not(.active){background:rgba(255,255,255,.12)}.bs.copy{background:rgba(255,214,68,.15);color:#ffd32a}
+.fcat-btn:hover:not(.active){background:rgba(255,255,255,.12)}
+.txn-btn{padding:10px 20px;border:2px solid rgba(74,143,255,.3);border-radius:12px;background:rgba(255,255,255,.06);color:#9bbde0;font-size:14px;font-weight:800;cursor:pointer;font-family:'M PLUS Rounded 1c',sans-serif;transition:all .2s}
+.txn-btn.active{border-color:#4a8fff;color:#fff;background:linear-gradient(135deg,#1a5cbf,#2a6dd9)}
+.txn-btn[data-txn="income"].active{background:linear-gradient(135deg,#1a7a4a,#26de81)}
+.txn-btn[data-txn="transfer"].active{background:linear-gradient(135deg,#6a1acc,#a55eea)}
+.txn-btn:hover:not(.active){background:rgba(255,255,255,.12)}.bs.copy{background:rgba(255,214,68,.15);color:#ffd32a}
 .ai-result{background:rgba(165,94,234,.1);border:2px solid rgba(165,94,234,.3);border-radius:14px;padding:16px;margin-top:14px}
 .ai-label{color:#c792ff;font-weight:900;font-size:14px;margin-bottom:8px}.ai-val{color:#d4aaff;font-size:14px}
 .sg{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px}
@@ -743,6 +798,18 @@ tr:last-child td{border-bottom:none}tr:hover td{background:rgba(74,143,255,.06)}
     <div class="card">
       <div class="card-title" id="edit-lbl">📝 経費入力</div>
       <form id="journal-form">
+
+        <!-- 取引区分 -->
+        <div style="margin-bottom:14px">
+          <div style="font-size:13px;color:#9bbde0;font-weight:800;margin-bottom:8px">取引区分</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button type="button" class="txn-btn active" data-txn="expense"  onclick="setTxnType('expense')">📋 支出</button>
+            <button type="button" class="txn-btn"        data-txn="income"   onclick="setTxnType('income')">💰 収入</button>
+            <button type="button" class="txn-btn"        data-txn="transfer" onclick="setTxnType('transfer')">🔄 振替</button>
+          </div>
+        </div>
+        <hr class="div">
+
         <div class="fg">
           <label>インボイス番号（自動採番・直接入力可）
   <div style="display:flex;align-items:center;gap:0">
@@ -775,7 +842,15 @@ tr:last-child td{border-bottom:none}tr:hover td{background:rgba(74,143,255,.06)}
           <label class="req">借方科目<select id="f-dr" required></select></label>
           <label class="req">貸方科目<select id="f-cr" required></select></label>
         </div>
-        <div style="display:flex;gap:12px;margin-top:18px;align-items:center">
+        <!-- 連続登録チェック -->
+        <div style="display:flex;align-items:center;gap:10px;margin-top:14px;padding:12px 14px;background:rgba(74,143,255,.08);border-radius:12px;border:1px solid rgba(74,143,255,.2)">
+          <input type="checkbox" id="keep-form" style="width:20px;height:20px;cursor:pointer;accent-color:#4a8fff;border-radius:6px">
+          <label for="keep-form" style="font-size:14px;color:#9bbde0;font-weight:700;cursor:pointer;margin:0;flex-direction:row;gap:0">
+            同じ取引を続けて登録する（金額以外の項目を保持）
+          </label>
+        </div>
+
+        <div style="display:flex;gap:12px;margin-top:12px;align-items:center">
           <button type="submit" class="btn btn-ok" style="flex:1">✅ 登録する</button>
           <button type="button" id="cancel-btn" class="btn btn-2" style="display:none" onclick="cancelEdit()">✕ キャンセル</button>
         </div>
