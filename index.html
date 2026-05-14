@@ -73,7 +73,7 @@
 
   // ===== 勘定科目 =====
   const ACCS = [
-    {c:"1001",n:"現金"},{c:"1002",n:"普通預金"},{c:"2001",n:"買掛金"},{c:"2101",n:"未払金"},{c:"2201",n:"役員借入金"},{c:"1301",n:"役員貸付金"},
+    {c:"1001",n:"現金"},{c:"1002",n:"普通預金"},{c:"2001",n:"買掛金"},{c:"2101",n:"未払金"},{c:"2201",n:"役員借入金"},{c:"1301",n:"役員貸付金"},{c:"2301",n:"短期借入金"},{c:"2401",n:"長期借入金"},
     {c:"4001",n:"売上高"},{c:"5001",n:"仕入高"},{c:"6001",n:"給与手当"},
     {c:"6102",n:"旅費交通費"},{c:"6103",n:"車両費"},{c:"6201",n:"通信費"},{c:"6202",n:"接待交際費"},
     {c:"6203",n:"広告宣伝費"},{c:"6204",n:"消耗品費"},{c:"6205",n:"水道光熱費"},{c:"6206",n:"地代家賃"},
@@ -107,12 +107,14 @@
     {kw:["給与","給料","賞与"],d:"6001",c:"1001",r:0},
     {kw:["役員貸付","役員への貸付","役員貸付金"],d:"1301",c:"1001",r:0},
     {kw:["役員借入","役員からの借入","役員借入金"],d:"6501",c:"2201",r:0},
+    {kw:["短期借入","短期返済","短期ローン返済"],d:"2301",c:"1001",r:0},
+    {kw:["長期借入","長期返済","長期ローン返済","借入返済","ローン返済","返済金"],d:"2401",c:"1001",r:0},
     {kw:["仕入","食材"],d:"5001",c:"2001",r:8},
     {kw:["材料費","原材料","資材"],d:"6502",c:"1001",r:10},
     {kw:["福利厚生","慶弔","健康診断","社員旅行","忘年会","新年会","懇親会"],d:"6503",c:"1001",r:10},
   ];
   // 非課税科目コードセット
-  const NON_TAX_SET = new Set(["6401","1700","1701","6001","2201","1301"]);
+  const NON_TAX_SET = new Set(["6401","1700","1701","6001","2201","1301","2301","2401"]);
 
   // 取引区分ごとのデフォルト借方・貸方設定
   const TXN_TYPE = {
@@ -215,7 +217,7 @@ JSON format: {"date":"YYYY-MM-DD","payee":"店名または取引先","desc":"摘
       const prompt=`Japanese bookkeeping. Return ONLY JSON, no other text.
 Input: desc="${desc}" item="${item}" payee="${payee}" amount=${amount}yen taxRate=${rate}%
 Accounts: ${ACCS.map(a=>a.c+":"+a.n).join(",")}
-IMPORTANT: 以下の科目は必ずtaxRate=0, taxAmount=0にすること。租税公課(6401)・給与手当(6001)・役員貸付金(1301)・役員借入金(2201)は非課税。収入印紙・印紙・証紙・登録免許税・給与・給料・賞与・役員貸付・役員借入は非課税。
+IMPORTANT: 以下の科目は必ずtaxRate=0, taxAmount=0にすること。租税公課(6401)・給与手当(6001)・役員貸付金(1301)・役員借入金(2201)・短期借入金(2301)・長期借入金(2401)は非課税。収入印紙・印紙・証紙・登録免許税・給与・給料・賞与・役員貸付・役員借入・借入返済・ローン返済・返済金は非課税。
 JSON: {"debit":"code","debitName":"name","credit":"code","creditName":"name","taxAmount":integer,"taxRate":integer,"confidence":float}`;
       const text=await callGemini([{text:prompt}]);
       const m=text.replace(/```json\s*/gi,"").replace(/```\s*/g,"").match(/\{[\s\S]*\}/);
@@ -467,7 +469,7 @@ JSON: {"debit":"code","debitName":"name","credit":"code","creditName":"name","ta
     const NON_CHECK=["租税","公課","給与","給料","賞与","役員貸付","役員借入"];
     if(NON_TAX_SET.has(dc)||NON_CHECK.some(w=>accN.includes(w))){
       $s("f-tr",0);$s("f-tx",0);
-      const lbl=dc==="6401"?"租税公課（収入印紙・証紙など）":dc==="6001"?"給与手当":dc==="1301"?"役員貸付金":dc==="2201"?"役員借入金":"この科目";
+      const lbl=dc==="6401"?"租税公課（収入印紙・証紙など）":dc==="6001"?"給与手当":dc==="1301"?"役員貸付金":dc==="2201"?"役員借入金":dc==="2301"?"短期借入金（返済）":dc==="2401"?"長期借入金（返済）":"この科目";
       notify("💡 "+lbl+"は非課税（0%）に自動設定しました","info");
     }
   });
@@ -594,7 +596,7 @@ JSON: {"debit":"code","debitName":"name","credit":"code","creditName":"name","ta
         editId=null;
         $s("f-amount","");
         $s("f-tx","0");
-        $s("f-inv","");
+        // インボイス番号は続けて登録でも保持する（取引先が同じ場合に引き継ぐ）
         document.getElementById("ai-res").style.display="none";
         document.getElementById("rec-prev").style.display="none";
         document.getElementById("rec-img").src="";
@@ -919,7 +921,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:rgba(74,143,255,.06)}
       <div class="sb"><div class="sl">🟠 8%（軽減税率）</div><div class="sv s8" style="color:#fd9644;font-size:15px">¥0</div></div>
     </div>
     <div class="tw">
-      <table><thead><tr><th>分類</th><th>インボイス番号</th><th>日付</th><th>取引先</th><th>取引手段</th><th>摘要</th><th>品目</th><th>借方科目</th><th>貸方科目</th><th style="text-align:right">税込金額</th><th style="text-align:right">税率/税額</th><th>操作</th></tr></thead>
+      <table><thead><tr><th>分類</th><th>インボイス番号</th><th>日付</th><th>取引手段</th><th>取引先</th><th>摘要</th><th>品目</th><th>借方科目</th><th>貸方科目</th><th style="text-align:right">税込金額</th><th style="text-align:right">税率/税額</th><th>操作</th></tr></thead>
       <tbody id="tbody"></tbody></table>
     </div>
   </div>
