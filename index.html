@@ -194,7 +194,7 @@
     const prompt=`You are a Japanese bookkeeping assistant. Analyze this receipt/invoice image and extract accounting information.
 Available accounts: ${accList}
 Respond with ONLY a valid JSON object. No explanation, no markdown, no code blocks.
-JSON format: {"date":"YYYY-MM-DD","payee":"店名または支払先","desc":"摘要（簡潔に）","item":"品目・内容の詳細","amount":税込合計金額の整数,"taxRate":消費税率の整数（8か10か0）,"taxAmount":消費税額の整数,"debit":"借方科目コード","debitName":"借方科目名","credit":"1001","creditName":"現金","confidence":確信度0から1の小数}`;
+JSON format: {"date":"YYYY-MM-DD","payee":"店名または取引先","desc":"摘要（簡潔に）","item":"品目・内容の詳細","amount":税込合計金額の整数,"taxRate":消費税率の整数（8か10か0）,"taxAmount":消費税額の整数,"debit":"借方科目コード","debitName":"借方科目名","credit":"1001","creditName":"現金","confidence":確信度0から1の小数}`;
     const text=await callGemini([{inline_data:{mime_type:mime,data:b64}},{text:prompt}]);
     setProgress("✨ データ確認中...",85);
     let clean=text.replace(/```json\s*/gi,"").replace(/```\s*/g,"").trim();
@@ -238,11 +238,11 @@ JSON: {"debit":"code","debitName":"name","credit":"code","creditName":"name","ta
   // ===== CSV =====
   function doCSV(js,fmt,coName) {
     const B="\uFEFF";let c="";
-    if(fmt==="汎用") c="会社名,インボイス番号,日付,支払先,摘要,品目・内容,借方科目,貸方科目,税込金額,消費税率,消費税額\n"
-      +js.map(j=>`${coName},${j.inv||"インボイス登録なし"},${j.date},"${j.payee||""}","${j.desc||""}","${j.item||""}",${j.dName},${j.cName},${j.amount},${j.tRate||10}%,${j.tAmt||0}`).join("\n");
+    if(fmt==="汎用") c="会社名,インボイス番号,日付,取引手段,取引先,摘要,品目・内容,借方科目,貸方科目,税込金額,消費税率,消費税額\n"
+      +js.map(j=>`${coName},${j.inv||"インボイス登録なし"},${j.date},"${j.payment||""}","${j.payee||""}","${j.desc||""}","${j.item||""}",${j.dName},${j.cName},${j.amount},${j.tRate||10}%,${j.tAmt||0}`).join("\n");
     else if(fmt==="弥生") c="識別フラグ,伝票日付,借方勘定科目,借方税区分,借方金額,借方消費税額,貸方勘定科目,貸方金額,摘要,インボイス番号\n"
       +js.map(j=>`2000,${j.date.replace(/-/g,"/")},,${j.dName},課税仕入${j.tRate||10}%,${j.amount},${j.tAmt||0},${j.cName},${j.amount},"${j.desc||""}",${j.inv||"インボイス登録なし"}`).join("\n");
-    else if(fmt==="freee") c="発生日,勘定科目,支払先,金額（円）,税区分,備考,インボイス番号\n"
+    else if(fmt==="freee") c="発生日,勘定科目,取引先,金額（円）,税区分,備考,インボイス番号\n"
       +js.map(j=>`${j.date},${j.dName},"${j.payee||""}",${j.amount},課税仕入(${j.tRate||10}%),"${j.desc||""}",${j.inv||"インボイス登録なし"}`).join("\n");
     else if(fmt==="MF") c="取引日,借方勘定科目,借方税区分,借方金額,貸方勘定科目,貸方金額,摘要,インボイス番号\n"
       +js.map(j=>`${j.date},${j.dName},${j.tRate||10}%,${j.amount},${j.cName},${j.amount},"${j.desc||""}",${j.inv||"インボイス登録なし"}`).join("\n");
@@ -348,6 +348,7 @@ JSON: {"debit":"code","debitName":"name","credit":"code","creditName":"name","ta
       <td>${getCategory(j)==="sales"?'<span class="bd" style="background:rgba(38,222,129,.2);color:#26de81">💰 売上</span>':getCategory(j)==="expense"?'<span class="bd" style="background:rgba(253,150,68,.2);color:#fd9644">📋 経費</span>':'<span class="bd" style="background:rgba(255,255,255,.1);color:#aaa">その他</span>'}</td>
       <td><span class="inv-no">${j.inv||"インボイス登録なし"}</span></td>
       <td style="white-space:nowrap">${j.date||""}</td>
+      <td>${j.payment?'<span class="bd" style="background:rgba(74,143,255,.12);color:#7eb8ff">'+j.payment+'</span>':"-"}</td>
       <td>${(j.payee||"-").slice(0,10)}${(j.payee||"").length>10?"…":""}</td>
       <td>${(j.desc||"-").slice(0,12)}${(j.desc||"").length>12?"…":""}</td>
       <td>${(j.item||"-").slice(0,12)}${(j.item||"").length>12?"…":""}</td>
@@ -429,6 +430,7 @@ JSON: {"debit":"code","debitName":"name","credit":"code","creditName":"name","ta
     const j=journals.find(x=>x.id===id);if(!j)return;
     editId=id;
     $s("f-inv",(j.inv||"").replace(/^T/,"").replace(/^インボイス登録なし$/,""));$s("f-date",j.date||"");$s("f-payee",j.payee||"");
+    $s("f-payment",j.payment||"");
     $s("f-desc",j.desc||"");$s("f-item",j.item||"");$s("f-amount",j.amount||"");
     $s("f-tr",j.tRate||10);$s("f-tx",j.tAmt||0);
     $s("f-dr",j.debit||"");$s("f-cr",j.credit||"");
@@ -439,7 +441,7 @@ JSON: {"debit":"code","debitName":"name","credit":"code","creditName":"name","ta
   window.cancelEdit=function(){
     editId=null;document.getElementById("journal-form").reset();
     $s("f-date",new Date().toISOString().slice(0,10));
-    $s("f-inv","");$s("f-tr",10);$s("f-tx",0);
+    $s("f-inv","");$s("f-tr",10);$s("f-tx",0);$s("f-payment","");
     document.getElementById("edit-lbl").textContent="📝 経費入力";
     document.getElementById("cancel-btn").style.display="none";
     document.getElementById("ai-res").style.display="none";
@@ -562,7 +564,7 @@ JSON: {"debit":"code","debitName":"name","credit":"code","creditName":"name","ta
     e.preventDefault();
     const dc=$v("f-dr"),cc=$v("f-cr"),tr=parseInt($v("f-tr"))||10,amt=parseInt($v("f-amount"))||0;
     const j={
-      id:editId||null,inv:$v("f-inv")?"T"+$v("f-inv").replace(/^T/,""):"インボイス登録なし",date:$v("f-date"),
+      id:editId||null,inv:$v("f-inv")?"T"+$v("f-inv").replace(/^T/,""):"インボイス登録なし",date:$v("f-date"),payment:$v("f-payment")||"",
       payee:$v("f-payee").trim(),desc:$v("f-desc").trim(),item:$v("f-item").trim(),
       amount:amt,tRate:tr,tAmt:parseInt($v("f-tx"))||tax(amt,tr),
       debit:dc,dName:accName(dc),credit:cc,cName:accName(cc),
@@ -821,9 +823,19 @@ tr:last-child td{border-bottom:none}tr:hover td{background:rgba(74,143,255,.06)}
         </div>
         <hr class="div">
         <div class="fg">
-          <label>支払先<input type="text" id="f-payee" placeholder="例：〇〇商店、△△株式会社"></label>
+          <label>取引先<input type="text" id="f-payee" placeholder="例：〇〇商店、△△株式会社"></label>
           <label>摘要<input type="text" id="f-desc" placeholder="例：タクシー代、会議費"></label>
           <label class="ff">品目・内容<input type="text" id="f-item" placeholder="例：食材（野菜・肉類）、コピー用紙A4"></label>
+        </div>
+        <div class="fg" style="margin-top:14px">
+          <label>💳 取引手段
+            <select id="f-payment">
+              <option value="">-- 選択してください --</option>
+              <option value="現金">現金</option>
+              <option value="普通預金">普通預金</option>
+              <option value="クレジットカード">クレジットカード</option>
+            </select>
+          </label>
         </div>
         <hr class="div">
         <div class="fg3">
@@ -897,7 +909,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:rgba(74,143,255,.06)}
       <div class="sb"><div class="sl">🟠 8%（軽減税率）</div><div class="sv s8" style="color:#fd9644;font-size:15px">¥0</div></div>
     </div>
     <div class="tw">
-      <table><thead><tr><th>分類</th><th>インボイス番号</th><th>日付</th><th>支払先</th><th>摘要</th><th>品目</th><th>借方科目</th><th>貸方科目</th><th style="text-align:right">税込金額</th><th style="text-align:right">税率/税額</th><th>操作</th></tr></thead>
+      <table><thead><tr><th>分類</th><th>インボイス番号</th><th>日付</th><th>取引先</th><th>取引手段</th><th>摘要</th><th>品目</th><th>借方科目</th><th>貸方科目</th><th style="text-align:right">税込金額</th><th style="text-align:right">税率/税額</th><th>操作</th></tr></thead>
       <tbody id="tbody"></tbody></table>
     </div>
   </div>
