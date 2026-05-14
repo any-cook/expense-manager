@@ -121,6 +121,7 @@
     transfer: { label:"🔄 振替", debit:"1002", credit:"1001" }, // 普通預金 / 現金
   };
   let keepForm = false; // 連続登録フラグ
+  let currentTxType = "expense"; // 現在の取引種別（デフォルト：支出）
 
   // 売上科目コードセット（収益）
   const SALES_CODES = new Set(["4001"]);
@@ -364,6 +365,7 @@ JSON: {"debit":"code","debitName":"name","credit":"code","creditName":"name","ta
 
   // ===== 取引区分 =====
   window.setTxnType=function(type){
+    currentTxType=type;
     // ボタンのアクティブ状態切替
     document.querySelectorAll(".txn-btn").forEach(b=>b.classList.toggle("active",b.dataset.txn===type));
     const t=TXN_TYPE[type];
@@ -418,6 +420,7 @@ JSON: {"debit":"code","debitName":"name","credit":"code","creditName":"name","ta
     $s("f-tx",j.tAmt||0);
     $s("f-dr",j.debit||"");
     $s("f-cr",j.credit||"");
+    if(j.txType) window.setTxnType(j.txType);
     document.getElementById("edit-lbl").textContent="📋 複写入力（新規登録）";
     document.getElementById("cancel-btn").style.display="inline-flex";
     document.getElementById("ai-res").style.display="none";
@@ -433,6 +436,7 @@ JSON: {"debit":"code","debitName":"name","credit":"code","creditName":"name","ta
     editId=id;
     $s("f-inv",(j.inv||"").replace(/^T/,"").replace(/^インボイス登録なし$/,""));$s("f-date",j.date||"");$s("f-payee",j.payee||"");
     $s("f-payment",j.payment||"");
+    if(j.txType) window.setTxnType(j.txType);
     $s("f-desc",j.desc||"");$s("f-item",j.item||"");$s("f-amount",j.amount||"");
     $s("f-tr",j.tRate||10);$s("f-tx",j.tAmt||0);
     $s("f-dr",j.debit||"");$s("f-cr",j.credit||"");
@@ -444,6 +448,7 @@ JSON: {"debit":"code","debitName":"name","credit":"code","creditName":"name","ta
     editId=null;document.getElementById("journal-form").reset();
     $s("f-date",new Date().toISOString().slice(0,10));
     $s("f-inv","");$s("f-tr",10);$s("f-tx",0);$s("f-payment","");
+    window.setTxnType("expense");
     document.getElementById("edit-lbl").textContent="📝 経費入力";
     document.getElementById("cancel-btn").style.display="none";
     document.getElementById("ai-res").style.display="none";
@@ -569,7 +574,7 @@ JSON: {"debit":"code","debitName":"name","credit":"code","creditName":"name","ta
     e.preventDefault();
     const dc=$v("f-dr"),cc=$v("f-cr"),tr=parseInt($v("f-tr"))||10,amt=parseInt($v("f-amount"))||0;
     const j={
-      id:editId||null,inv:$v("f-inv")?"T"+$v("f-inv").replace(/^T/,""):"インボイス登録なし",date:$v("f-date"),payment:$v("f-payment")||"",
+      id:editId||null,txType:currentTxType,inv:$v("f-inv")?"T"+$v("f-inv").replace(/^T/,""):"インボイス登録なし",date:$v("f-date"),payment:$v("f-payment")||"",
       payee:$v("f-payee").trim(),desc:$v("f-desc").trim(),item:$v("f-item").trim(),
       amount:amt,tRate:tr,tAmt:parseInt($v("f-tx"))||tax(amt,tr),
       debit:dc,dName:accName(dc),credit:cc,cName:accName(cc),
