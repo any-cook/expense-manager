@@ -261,6 +261,7 @@ JSON: {"debit":"code","debitName":"name","credit":"code","creditName":"name","ta
   let journals=[],editId=null;
   let filterMonth="", filterCat="all"; // 月別・分類フィルター
   let sortMode="date_desc"; // ソート順：date_desc=日付新しい順（デフォルト）
+  let viewMode="list"; // 表示モード：list=通常一覧、group=科目別グループ
 
   // 会社ごとのFirestoreパス
   function journalCol() {
@@ -355,10 +356,77 @@ JSON: {"debit":"code","debitName":"name","credit":"code","creditName":"name","ta
     }
   }
 
+  function renderGrouped(filtered) {
+    // 科目別にグループ化
+    const groups = {};
+    filtered.forEach(j=>{
+      const key = (j.debit||"unknown")+"__"+(j.dName||"不明");
+      if(!groups[key]) groups[key]={code:j.debit||"",name:j.dName||"不明",items:[],total:0,taxTotal:0};
+      groups[key].items.push(j);
+      groups[key].total += Number(j.amount||0);
+      groups[key].taxTotal += Number(j.tAmt||0);
+    });
+    // 科目コード順に並び替え
+    const sorted = Object.values(groups).sort((a,b)=>a.code.localeCompare(b.code));
+    let html = "";
+    sorted.forEach(g=>{
+      // グループヘッダー行
+      html += `<tr class="group-header">
+        <td colspan="10">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+            <div style="display:flex;align-items:center;gap:10px">
+              <span style="background:rgba(74,143,255,.25);color:#7eb8ff;font-size:12px;font-weight:800;padding:3px 10px;border-radius:6px;font-family:monospace">${g.code}</span>
+              <span style="font-size:15px;font-weight:900;color:#7eb8ff">${g.name}</span>
+              <span style="font-size:12px;color:#9bbde0">${g.items.length}件</span>
+            </div>
+            <div style="display:flex;gap:16px;font-size:13px;font-weight:800">
+              <span style="color:#26de81">合計 ¥${g.total.toLocaleString()}</span>
+              <span style="color:#ffd32a">消費税 ¥${g.taxTotal.toLocaleString()}</span>
+            </div>
+          </div>
+        </td>
+      </tr>`;
+      // 明細行
+      g.items.forEach(j=>{
+        html += `<tr class="group-row">
+          <td><span class="inv-no">${j.inv||"インボイス登録なし"}</span></td>
+          <td style="white-space:nowrap">${j.date||""}</td>
+          <td>${j.payment?'<span class="bd" style="background:rgba(74,143,255,.12);color:#7eb8ff">'+j.payment+'</span>':"-"}</td>
+          <td>${(j.payee||"-").slice(0,10)}${(j.payee||"").length>10?"…":""}</td>
+          <td>${(j.desc||"-").slice(0,14)}${(j.desc||"").length>14?"…":""}</td>
+          <td>${(j.item||"-").slice(0,12)}${(j.item||"").length>12?"…":""}</td>
+          <td><span class="bd green">${j.cName||""}</span></td>
+          <td class="num">¥${Number(j.amount||0).toLocaleString()}</td>
+          <td class="num"><span class="bd ${Number(j.tRate||10)===8?"orange":"purple"}">${j.tRate||10}%</span><div style="margin-top:3px">¥${Number(j.tAmt||0).toLocaleString()}</div></td>
+          <td><button class="bs copy" onclick="copyJournal('${j.id}')">複写</button><button class="bs" onclick="startEdit('${j.id}')">編集</button><button class="bs del" onclick="delJournal('${j.id}')">削除</button></td>
+        </tr>`;
+      });
+    });
+    return html;
+  }
+
   function renderList() {
     const tb=document.getElementById("tbody");
     const filtered=applyFilter(journals);
     if(!filtered.length){tb.innerHTML='<tr><td colspan="10" style="text-align:center;color:#aaa;padding:50px;font-size:16px">📭 データがありません</td></tr>';return;}
+
+    // 科目別グループ表示
+    if(viewMode==="group") {
+      // グループ表示用にヘッダーを切り替え
+      document.getElementById("list-thead").innerHTML=`<tr>
+        <th>インボイス番号</th><th>日付</th><th>取引手段</th><th>取引先</th><th>摘要</th><th>品目</th>
+        <th>貸方科目</th><th style="text-align:right">税込金額</th><th style="text-align:right">税率/税額</th><th>操作</th>
+      </tr>`;
+      tb.innerHTML = renderGrouped(filtered);
+      return;
+    }
+
+    // 通常一覧表示
+    document.getElementById("list-thead").innerHTML=`<tr>
+      <th>分類</th><th>インボイス番号</th><th>日付</th><th>取引手段</th><th>取引先</th><th>摘要</th><th>品目</th>
+      <th>借方科目</th><th>貸方科目</th><th style="text-align:right">税込金額</th><th style="text-align:right">税率/税額</th><th>操作</th>
+    </tr>`;
+
     tb.innerHTML=filtered.map(j=>`<tr>
       <td>${getCategory(j)==="sales"?'<span class="bd" style="background:rgba(38,222,129,.2);color:#26de81">💰 売上</span>':getCategory(j)==="expense"?'<span class="bd" style="background:rgba(253,150,68,.2);color:#fd9644">📋 経費</span>':'<span class="bd" style="background:rgba(255,255,255,.1);color:#aaa">その他</span>'}</td>
       <td><span class="inv-no">${j.inv||"インボイス登録なし"}</span></td>
@@ -395,6 +463,13 @@ JSON: {"debit":"code","debitName":"name","credit":"code","creditName":"name","ta
     return document.getElementById("keep-form")?.checked || false;
   }
 
+  // ===== 表示モード切替 =====
+  window.setViewMode=function(mode){
+    viewMode=mode;
+    document.querySelectorAll(".view-btn").forEach(b=>b.classList.toggle("active",b.dataset.view===mode));
+    renderList();stats();
+  };
+
   // ===== ソート操作 =====
   window.setSort=function(mode){
     sortMode=mode;
@@ -412,10 +487,11 @@ JSON: {"debit":"code","debitName":"name","credit":"code","creditName":"name","ta
     renderList();stats();
   };
   window.clearFilter=function(){
-    filterMonth="";filterCat="all";sortMode="date_desc";
+    filterMonth="";filterCat="all";sortMode="date_desc";viewMode="list";
     document.getElementById("filter-month").value="";
     document.querySelectorAll(".fcat-btn").forEach(b=>b.classList.toggle("active",b.dataset.cat==="all"));
     document.querySelectorAll(".sort-btn").forEach(b=>b.classList.toggle("active",b.dataset.sort==="date_desc"));
+    document.querySelectorAll(".view-btn").forEach(b=>b.classList.toggle("active",b.dataset.view==="list"));
     renderList();stats();
     notify("フィルター・並び順をリセットしました","info");
   };
@@ -740,6 +816,12 @@ select option{background:#1a2744}.div{border:none;border-top:1px solid rgba(74,1
 .sort-btn{padding:8px 14px;border:2px solid rgba(74,143,255,.2);border-radius:10px;background:rgba(255,255,255,.04);color:#9bbde0;font-size:12px;font-weight:800;cursor:pointer;font-family:'M PLUS Rounded 1c',sans-serif;transition:all .15s;white-space:nowrap}
 .sort-btn.active{background:rgba(255,214,68,.15);color:#ffd32a;border-color:#ffd32a}
 .sort-btn:hover:not(.active){background:rgba(255,255,255,.1)}
+.view-btn{padding:9px 18px;border:2px solid rgba(74,143,255,.3);border-radius:10px;background:rgba(255,255,255,.06);color:#9bbde0;font-size:13px;font-weight:800;cursor:pointer;font-family:'M PLUS Rounded 1c',sans-serif;transition:all .15s}
+.view-btn.active{background:rgba(74,143,255,.2);color:#7eb8ff;border-color:#4a8fff}
+.view-btn:hover:not(.active){background:rgba(255,255,255,.1)}
+tr.group-header td{background:rgba(74,143,255,.12);padding:12px 14px;border-bottom:none;border-top:2px solid rgba(74,143,255,.3)}
+tr.group-row td{padding:9px 10px;border-bottom:1px solid rgba(74,143,255,.06);color:#c8d8f0}
+tr.group-row:hover td{background:rgba(74,143,255,.06)}
 .txn-btn{padding:10px 20px;border:2px solid rgba(74,143,255,.3);border-radius:12px;background:rgba(255,255,255,.06);color:#9bbde0;font-size:14px;font-weight:800;cursor:pointer;font-family:'M PLUS Rounded 1c',sans-serif;transition:all .2s}
 .txn-btn.active{border-color:#4a8fff;color:#fff;background:linear-gradient(135deg,#1a5cbf,#2a6dd9)}
 .txn-btn[data-txn="income"].active{background:linear-gradient(135deg,#1a7a4a,#26de81)}
@@ -933,6 +1015,13 @@ tr:last-child td{border-bottom:none}tr:hover td{background:rgba(74,143,255,.06)}
             <button class="sort-btn"        data-sort="reg_asc"   onclick="setSort('reg_asc')">🕐 登録↑古い順</button>
           </div>
         </div>
+        <div style="display:flex;flex-direction:column;gap:5px">
+          <label style="font-size:12px;color:#9bbde0;font-weight:800">📋 表示形式</label>
+          <div style="display:flex;gap:8px">
+            <button class="view-btn active" data-view="list"  onclick="setViewMode('list')">📋 一覧</button>
+            <button class="view-btn"        data-view="group" onclick="setViewMode('group')">📁 科目別</button>
+          </div>
+        </div>
         <button onclick="clearFilter()" style="padding:9px 16px;border:none;border-radius:10px;background:rgba(255,255,255,.08);color:#9bbde0;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">✕ クリア</button>
       </div>
     </div>
@@ -954,7 +1043,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:rgba(74,143,255,.06)}
       <div class="sb"><div class="sl">🟠 8%（軽減税率）</div><div class="sv s8" style="color:#fd9644;font-size:15px">¥0</div></div>
     </div>
     <div class="tw">
-      <table><thead><tr><th>分類</th><th>インボイス番号</th><th>日付</th><th>取引手段</th><th>取引先</th><th>摘要</th><th>品目</th><th>借方科目</th><th>貸方科目</th><th style="text-align:right">税込金額</th><th style="text-align:right">税率/税額</th><th>操作</th></tr></thead>
+      <table><thead id="list-thead"><tr><th>分類</th><th>インボイス番号</th><th>日付</th><th>取引手段</th><th>取引先</th><th>摘要</th><th>品目</th><th>借方科目</th><th>貸方科目</th><th style="text-align:right">税込金額</th><th style="text-align:right">税率/税額</th><th>操作</th></tr></thead>
       <tbody id="tbody"></tbody></table>
     </div>
   </div>
