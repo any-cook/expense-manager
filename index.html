@@ -260,6 +260,7 @@ JSON: {"debit":"code","debitName":"name","credit":"code","creditName":"name","ta
   // ===== Firebase =====
   let journals=[],editId=null;
   let filterMonth="", filterCat="all"; // 月別・分類フィルター
+  let sortMode="date_desc"; // ソート順：date_desc=日付新しい順（デフォルト）
 
   // 会社ごとのFirestoreパス
   function journalCol() {
@@ -311,15 +312,24 @@ JSON: {"debit":"code","debitName":"name","credit":"code","creditName":"name","ta
     if(t==="list"||t==="export"){renderList();stats();}
   }
 
-  // フィルター適用
+  // フィルター＆ソート適用
   function applyFilter(list) {
-    return list.filter(j=>{
+    let filtered = list.filter(j=>{
       const monthOK = !filterMonth || (j.date||"").startsWith(filterMonth);
       const catOK   = filterCat==="all"
         || (filterCat==="sales"   && getCategory(j)==="sales")
         || (filterCat==="expense" && getCategory(j)==="expense");
       return monthOK && catOK;
     });
+    // ソート
+    filtered = [...filtered].sort((a,b)=>{
+      if(sortMode==="date_desc") return (b.date||"").localeCompare(a.date||"");
+      if(sortMode==="date_asc")  return (a.date||"").localeCompare(b.date||"");
+      if(sortMode==="reg_desc")  return (b.createdAt||"").localeCompare(a.createdAt||"");
+      if(sortMode==="reg_asc")   return (a.createdAt||"").localeCompare(b.createdAt||"");
+      return 0;
+    });
+    return filtered;
   }
 
   function stats() {
@@ -385,6 +395,16 @@ JSON: {"debit":"code","debitName":"name","credit":"code","creditName":"name","ta
     return document.getElementById("keep-form")?.checked || false;
   }
 
+  // ===== ソート操作 =====
+  window.setSort=function(mode){
+    sortMode=mode;
+    // ソートボタンのスタイル更新
+    document.querySelectorAll(".sort-btn").forEach(b=>{
+      b.classList.toggle("active", b.dataset.sort===mode);
+    });
+    renderList();
+  };
+
   // ===== フィルター操作 =====
   window.setCat=function(cat){
     filterCat=cat;
@@ -392,11 +412,12 @@ JSON: {"debit":"code","debitName":"name","credit":"code","creditName":"name","ta
     renderList();stats();
   };
   window.clearFilter=function(){
-    filterMonth="";filterCat="all";
+    filterMonth="";filterCat="all";sortMode="date_desc";
     document.getElementById("filter-month").value="";
     document.querySelectorAll(".fcat-btn").forEach(b=>b.classList.toggle("active",b.dataset.cat==="all"));
+    document.querySelectorAll(".sort-btn").forEach(b=>b.classList.toggle("active",b.dataset.sort==="date_desc"));
     renderList();stats();
-    notify("フィルターをクリアしました","info");
+    notify("フィルター・並び順をリセットしました","info");
   };
   document.getElementById("filter-month").addEventListener("change",function(){
     filterMonth=this.value; // "2025-05" 形式
@@ -716,6 +737,9 @@ select option{background:#1a2744}.div{border:none;border-top:1px solid rgba(74,1
 .fcat-btn{padding:9px 16px;border:2px solid rgba(74,143,255,.3);border-radius:10px;background:rgba(255,255,255,.06);color:#9bbde0;font-size:13px;font-weight:800;cursor:pointer;font-family:'M PLUS Rounded 1c',sans-serif;transition:all .15s}
 .fcat-btn.active{background:rgba(74,143,255,.2);color:#7eb8ff;border-color:#4a8fff}
 .fcat-btn:hover:not(.active){background:rgba(255,255,255,.12)}
+.sort-btn{padding:8px 14px;border:2px solid rgba(74,143,255,.2);border-radius:10px;background:rgba(255,255,255,.04);color:#9bbde0;font-size:12px;font-weight:800;cursor:pointer;font-family:'M PLUS Rounded 1c',sans-serif;transition:all .15s;white-space:nowrap}
+.sort-btn.active{background:rgba(255,214,68,.15);color:#ffd32a;border-color:#ffd32a}
+.sort-btn:hover:not(.active){background:rgba(255,255,255,.1)}
 .txn-btn{padding:10px 20px;border:2px solid rgba(74,143,255,.3);border-radius:12px;background:rgba(255,255,255,.06);color:#9bbde0;font-size:14px;font-weight:800;cursor:pointer;font-family:'M PLUS Rounded 1c',sans-serif;transition:all .2s}
 .txn-btn.active{border-color:#4a8fff;color:#fff;background:linear-gradient(135deg,#1a5cbf,#2a6dd9)}
 .txn-btn[data-txn="income"].active{background:linear-gradient(135deg,#1a7a4a,#26de81)}
@@ -885,9 +909,9 @@ tr:last-child td{border-bottom:none}tr:hover td{background:rgba(74,143,255,.06)}
   <!-- 一覧 -->
   <div class="tab-panel" id="p-list">
 
-    <!-- フィルターUI -->
+    <!-- フィルター・ソートUI -->
     <div class="card" style="padding:16px 20px;margin-bottom:14px">
-      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
         <div style="display:flex;flex-direction:column;gap:5px;flex:1;min-width:150px">
           <label style="font-size:12px;color:#9bbde0;font-weight:800">📅 月を選択</label>
           <input type="month" id="filter-month" style="padding:9px 12px;font-size:14px;border-radius:10px;background:rgba(0,10,30,.5);border:2px solid rgba(74,143,255,.3);color:#e8eaf0;outline:none">
@@ -895,12 +919,21 @@ tr:last-child td{border-bottom:none}tr:hover td{background:rgba(74,143,255,.06)}
         <div style="display:flex;flex-direction:column;gap:5px">
           <label style="font-size:12px;color:#9bbde0;font-weight:800">📊 分類</label>
           <div style="display:flex;gap:8px">
-            <button class="fcat-btn active" data-cat="all"  onclick="setCat('all')">すべて</button>
+            <button class="fcat-btn active" data-cat="all"     onclick="setCat('all')">すべて</button>
             <button class="fcat-btn"        data-cat="sales"   onclick="setCat('sales')">💰 売上</button>
             <button class="fcat-btn"        data-cat="expense" onclick="setCat('expense')">📋 経費</button>
           </div>
         </div>
-        <button onclick="clearFilter()" style="padding:9px 16px;border:none;border-radius:10px;background:rgba(255,255,255,.08);color:#9bbde0;font-size:13px;font-weight:700;cursor:pointer;align-self:flex-end;font-family:inherit">✕ クリア</button>
+        <div style="display:flex;flex-direction:column;gap:5px">
+          <label style="font-size:12px;color:#9bbde0;font-weight:800">🔃 並び順</label>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="sort-btn active" data-sort="date_desc" onclick="setSort('date_desc')">📅 日付↓新しい順</button>
+            <button class="sort-btn"        data-sort="date_asc"  onclick="setSort('date_asc')">📅 日付↑古い順</button>
+            <button class="sort-btn"        data-sort="reg_desc"  onclick="setSort('reg_desc')">🕐 登録↓新しい順</button>
+            <button class="sort-btn"        data-sort="reg_asc"   onclick="setSort('reg_asc')">🕐 登録↑古い順</button>
+          </div>
+        </div>
+        <button onclick="clearFilter()" style="padding:9px 16px;border:none;border-radius:10px;background:rgba(255,255,255,.08);color:#9bbde0;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">✕ クリア</button>
       </div>
     </div>
 
