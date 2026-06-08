@@ -278,8 +278,29 @@ JSONのみ返答（コードブロック不要）:
     const B="\uFEFF";let c="";
     if(fmt==="汎用") c="会社名,インボイス番号,日付,取引手段,取引先,摘要,品目・内容,借方科目,貸方科目,税込金額,消費税率,消費税額\n"
       +js.map(j=>`${coName},${j.inv||"インボイス登録なし"},${j.date},"${j.payment||""}","${j.payee||""}","${j.desc||""}","${j.item||""}",${j.dName},${j.cName},${j.amount},${j.tRate||10}%,${j.tAmt||0}`).join("\n");
-    else if(fmt==="弥生") c="識別フラグ,伝票日付,借方勘定科目,借方税区分,借方金額,借方消費税額,貸方勘定科目,貸方金額,摘要,インボイス番号\n"
-      +js.map(j=>`2000,${j.date.replace(/-/g,"/")},,${j.dName},課税仕入${j.tRate||10}%,${j.amount},${j.tAmt||0},${j.cName},${j.amount},"${j.desc||""}",${j.inv||"インボイス登録なし"}`).join("\n");
+    else if(fmt==="弥生") {
+      // 弥生会計 仕訳日記帳インポート形式（正式仕様）
+      const yayoiHeader = "識別フラグ,伝票日付,伝票番号,借方勘定科目,借方補助科目,借方部門,借方税区分,借方金額,借方消費税額,貸方勘定科目,貸方補助科目,貸方部門,貸方税区分,貸方金額,貸方消費税額,摘要,メモ,付箋1,付箋2,調査";
+      const yayoiRows = js.map((j,i) => {
+        const dateStr = j.date ? j.date.replace(/-/g,"/") : "";
+        const taxRate = Number(j.tRate ?? 10);
+        const amount  = Number(j.amount || 0);
+        const taxAmt  = Number(j.tAmt || 0);
+        // 税区分の判定
+        let drTaxKbn = "";
+        if(taxRate === 10)      drTaxKbn = "課税仕入10%";
+        else if(taxRate === 8)  drTaxKbn = "課税仕入8%(軽)";
+        else                    drTaxKbn = "対象外";
+        // 貸方は通常「対象外」
+        const crTaxKbn = "対象外";
+        // 摘要（ダブルクォートをエスケープ）
+        const desc = (j.desc || "").replace(/"/g, """");
+        const memo = (j.payee || "").replace(/"/g, """");
+        // 識別フラグ,伝票日付,伝票番号,借方勘定科目,借方補助科目,借方部門,借方税区分,借方金額,借方消費税額,貸方勘定科目,貸方補助科目,貸方部門,貸方税区分,貸方金額,貸方消費税額,摘要,メモ,付箋1,付箋2,調査
+        return `2000,${dateStr},,${j.dName},,,${drTaxKbn},${amount},${taxAmt},${j.cName},,,${crTaxKbn},${amount},0,"${desc}","${memo}",,, `;
+      });
+      c = yayoiHeader + "\n" + yayoiRows.join("\n");
+    }
     else if(fmt==="freee") c="発生日,勘定科目,取引先,金額（円）,税区分,備考,インボイス番号\n"
       +js.map(j=>`${j.date},${j.dName},"${j.payee||""}",${j.amount},課税仕入(${j.tRate||10}%),"${j.desc||""}",${j.inv||"インボイス登録なし"}`).join("\n");
     else if(fmt==="MF") c="取引日,借方勘定科目,借方税区分,借方金額,貸方勘定科目,貸方金額,摘要,インボイス番号\n"
