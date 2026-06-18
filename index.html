@@ -294,8 +294,8 @@ JSONのみ返答（コードブロック不要）:
         // 貸方は通常「対象外」
         const crTaxKbn = "対象外";
         // 摘要（ダブルクォートをエスケープ）
-        const desc = (j.desc || "").replace(/"/g, """");
-        const memo = (j.payee || "").replace(/"/g, """");
+        const desc = (j.desc || "").replace(/"/g, "");
+        const memo = (j.payee || "").replace(/"/g, "");
         // 識別フラグ,伝票日付,伝票番号,借方勘定科目,借方補助科目,借方部門,借方税区分,借方金額,借方消費税額,貸方勘定科目,貸方補助科目,貸方部門,貸方税区分,貸方金額,貸方消費税額,摘要,メモ,付箋1,付箋2,調査
         return `2000,${dateStr},,${j.dName},,,${drTaxKbn},${amount},${taxAmt},${j.cName},,,${crTaxKbn},${amount},0,"${desc}","${memo}",,, `;
       });
@@ -811,10 +811,10 @@ JSONのみ返答（コードブロック不要）:
 </script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'M PLUS Rounded 1c',sans-serif;background:linear-gradient(135deg,#1a1a2e,#16213e,#0f3460);min-height:100vh;color:#e8eaf0;font-size:15px}
+body{font-family:"M PLUS Rounded 1c",sans-serif;background:linear-gradient(135deg,#1a1a2e,#16213e,#0f3460);min-height:100vh;color:#e8eaf0;font-size:15px}
 
 /* ===== 会社選択画面 ===== */
-#company-screen{flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:30px 20px}
+#company-screen{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:30px 20px}
 .co-title{font-size:26px;font-weight:900;color:#7eb8ff;margin-bottom:8px;letter-spacing:2px}
 .co-subtitle{font-size:14px;color:#9bbde0;margin-bottom:40px;text-align:center}
 #company-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:20px;width:100%;max-width:820px}
@@ -830,14 +830,14 @@ header{background:linear-gradient(90deg,#1a2744,#2a3f6f);border-bottom:3px solid
 .logo{font-size:18px;font-weight:900;color:#7eb8ff;letter-spacing:2px}
 .logo-sub{font-size:11px;color:#9bbde0;margin-top:2px}
 #company-name-disp{font-size:15px;font-weight:900;margin-top:3px}
-.change-co{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);border-radius:8px;padding:6px 14px;color:#e8eaf0;font-size:12px;font-weight:700;cursor:pointer;font-family:'M PLUS Rounded 1c',sans-serif;transition:all .15s}
+.change-co{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);border-radius:8px;padding:6px 14px;color:#e8eaf0;font-size:12px;font-weight:700;cursor:pointer;font-family:"M PLUS Rounded 1c",sans-serif;transition:all .15s}
 .change-co:hover{background:rgba(255,255,255,.2)}
 
 .api-banner{background:rgba(253,150,68,.12);border:2px solid rgba(253,150,68,.4);border-radius:16px;margin:14px 20px 0;padding:18px}
 .api-banner-title{color:#fd9644;font-size:15px;font-weight:900;margin-bottom:10px}
 .api-banner-sub{font-size:13px;color:#c8a080;margin-bottom:12px;line-height:1.7}
 .api-row{display:flex;gap:10px;flex-wrap:wrap}
-.api-row input{flex:1;min-width:200px;background:rgba(0,10,30,.5);border:2px solid rgba(253,150,68,.4);border-radius:12px;padding:12px 14px;color:#e8eaf0;font-family:'M PLUS Rounded 1c',sans-serif;font-size:14px;outline:none}
+.api-row input{flex:1;min-width:200px;background:rgba(0,10,30,.5);border:2px solid rgba(253,150,68,.4);border-radius:12px;padding:12px 14px;color:#e8eaf0;font-family:"M PLUS Rounded 1c",sans-serif;font-size:14px;outline:none}
 .api-row input::placeholder{color:#8a6a4a}
 .pw{display:none;margin:12px 20px 0;background:rgba(74,143,255,.08);border:1px solid rgba(74,143,255,.3);border-radius:12px;padding:14px}
 .pt{font-size:14px;color:#7eb8ff;font-weight:700;margin-bottom:8px}
@@ -845,7 +845,7 @@ header{background:linear-gradient(90deg,#1a2744,#2a3f6f);border-bottom:3px solid
 .pf{height:100%;background:linear-gradient(90deg,#4a8fff,#7eb8ff);border-radius:6px;transition:width .4s ease;width:0%}
 
 .tabs{display:flex;gap:4px;padding:14px 20px 0}
-.tab-btn{padding:10px 20px;border-radius:12px 12px 0 0;border:none;cursor:pointer;font-size:14px;font-weight:800;font-family:'M PLUS Rounded 1c',sans-serif;background:rgba(255,255,255,.06);color:#9bbde0;transition:all .2s}
+.tab-btn{padding:10px 20px;border-radius:12px 12px 0 0;border:none;cursor:pointer;font-size:14px;font-weight:800;font-family:"M PLUS Rounded 1c",sans-serif;background:rgba(255,255,255,.06);color:#9bbde0;transition:all .2s}
 .tab-btn.active{background:rgba(74,143,255,.18);color:#7eb8ff;border-bottom:3px solid #4a8fff}
 .tab-btn:hover:not(.active){background:rgba(255,255,255,.1)}
 .tab-panel{display:none;padding:18px 20px 70px}.tab-panel.active{display:block}
@@ -860,34 +860,34 @@ header{background:linear-gradient(90deg,#1a2744,#2a3f6f);border-bottom:3px solid
 .fg{display:grid;grid-template-columns:1fr 1fr;gap:14px}.fg3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
 @media(max-width:600px){.fg,.fg3{grid-template-columns:1fr}}.ff{grid-column:1/-1}
 label{display:flex;flex-direction:column;gap:6px;font-size:13px;color:#9bbde0;font-weight:800}.req::after{content:" ✳";color:#ff7eb8;font-size:11px}
-input,select{background:rgba(0,10,30,.5);border:2px solid rgba(74,143,255,.25);border-radius:12px;padding:12px 14px;color:#e8eaf0;font-size:15px;font-family:'M PLUS Rounded 1c',sans-serif;font-weight:500;outline:none;width:100%;transition:all .2s}
+input,select{background:rgba(0,10,30,.5);border:2px solid rgba(74,143,255,.25);border-radius:12px;padding:12px 14px;color:#e8eaf0;font-size:15px;font-family:"M PLUS Rounded 1c",sans-serif;font-weight:500;outline:none;width:100%;transition:all .2s}
 input:focus,select:focus{border-color:#4a8fff;box-shadow:0 0 0 4px rgba(74,143,255,.15)}
 input::placeholder{color:#4a6a9a}input[readonly]{background:rgba(74,143,255,.08);color:#7eb8ff;cursor:default;font-family:monospace;font-size:13px;font-weight:700}
 select option{background:#1a2744}.div{border:none;border-top:1px solid rgba(74,143,255,.12);margin:16px 0}
-.btn{padding:14px 0;border:none;border-radius:14px;font-size:16px;font-weight:900;cursor:pointer;width:100%;font-family:'M PLUS Rounded 1c',sans-serif;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:8px}
+.btn{padding:14px 0;border:none;border-radius:14px;font-size:16px;font-weight:900;cursor:pointer;width:100%;font-family:"M PLUS Rounded 1c",sans-serif;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:8px}
 .btn-ai{background:linear-gradient(135deg,#a55eea,#7c4dff);color:#fff;margin-top:14px}
 .btn-ok{background:linear-gradient(135deg,#26de81,#20bf6b);color:#fff}
 .btn-2{background:rgba(74,143,255,.12);color:#7eb8ff;border:2px solid rgba(74,143,255,.3);padding:12px 20px;width:auto;font-size:15px}
 .btn-og{background:linear-gradient(135deg,#fd9644,#e55039);color:#fff;padding:12px 24px;width:auto}
 .btn:hover{opacity:.9;transform:translateY(-2px)}
-.bs{padding:7px 13px;border:none;border-radius:8px;font-size:12px;cursor:pointer;font-weight:800;font-family:'M PLUS Rounded 1c',sans-serif;background:rgba(74,143,255,.15);color:#7eb8ff;margin-right:4px}
+.bs{padding:7px 13px;border:none;border-radius:8px;font-size:12px;cursor:pointer;font-weight:800;font-family:"M PLUS Rounded 1c",sans-serif;background:rgba(74,143,255,.15);color:#7eb8ff;margin-right:4px}
 .bs.del{background:rgba(255,107,107,.15);color:#ff6b6b}
 .bs.copy{background:rgba(255,214,68,.15);color:#ffd32a}
 .sg3ec{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px}
 @media(max-width:600px){.sg3ec{grid-template-columns:1fr}}
-.fcat-btn{padding:9px 16px;border:2px solid rgba(74,143,255,.3);border-radius:10px;background:rgba(255,255,255,.06);color:#9bbde0;font-size:13px;font-weight:800;cursor:pointer;font-family:'M PLUS Rounded 1c',sans-serif;transition:all .15s}
+.fcat-btn{padding:9px 16px;border:2px solid rgba(74,143,255,.3);border-radius:10px;background:rgba(255,255,255,.06);color:#9bbde0;font-size:13px;font-weight:800;cursor:pointer;font-family:"M PLUS Rounded 1c",sans-serif;transition:all .15s}
 .fcat-btn.active{background:rgba(74,143,255,.2);color:#7eb8ff;border-color:#4a8fff}
 .fcat-btn:hover:not(.active){background:rgba(255,255,255,.12)}
-.sort-btn{padding:8px 14px;border:2px solid rgba(74,143,255,.2);border-radius:10px;background:rgba(255,255,255,.04);color:#9bbde0;font-size:12px;font-weight:800;cursor:pointer;font-family:'M PLUS Rounded 1c',sans-serif;transition:all .15s;white-space:nowrap}
+.sort-btn{padding:8px 14px;border:2px solid rgba(74,143,255,.2);border-radius:10px;background:rgba(255,255,255,.04);color:#9bbde0;font-size:12px;font-weight:800;cursor:pointer;font-family:"M PLUS Rounded 1c",sans-serif;transition:all .15s;white-space:nowrap}
 .sort-btn.active{background:rgba(255,214,68,.15);color:#ffd32a;border-color:#ffd32a}
 .sort-btn:hover:not(.active){background:rgba(255,255,255,.1)}
-.view-btn{padding:9px 18px;border:2px solid rgba(74,143,255,.3);border-radius:10px;background:rgba(255,255,255,.06);color:#9bbde0;font-size:13px;font-weight:800;cursor:pointer;font-family:'M PLUS Rounded 1c',sans-serif;transition:all .15s}
+.view-btn{padding:9px 18px;border:2px solid rgba(74,143,255,.3);border-radius:10px;background:rgba(255,255,255,.06);color:#9bbde0;font-size:13px;font-weight:800;cursor:pointer;font-family:"M PLUS Rounded 1c",sans-serif;transition:all .15s}
 .view-btn.active{background:rgba(74,143,255,.2);color:#7eb8ff;border-color:#4a8fff}
 .view-btn:hover:not(.active){background:rgba(255,255,255,.1)}
 tr.group-header td{background:rgba(74,143,255,.12);padding:12px 14px;border-bottom:none;border-top:2px solid rgba(74,143,255,.3)}
 tr.group-row td{padding:9px 10px;border-bottom:1px solid rgba(74,143,255,.06);color:#c8d8f0}
 tr.group-row:hover td{background:rgba(74,143,255,.06)}
-.txn-btn{padding:10px 20px;border:2px solid rgba(74,143,255,.3);border-radius:12px;background:rgba(255,255,255,.06);color:#9bbde0;font-size:14px;font-weight:800;cursor:pointer;font-family:'M PLUS Rounded 1c',sans-serif;transition:all .2s}
+.txn-btn{padding:10px 20px;border:2px solid rgba(74,143,255,.3);border-radius:12px;background:rgba(255,255,255,.06);color:#9bbde0;font-size:14px;font-weight:800;cursor:pointer;font-family:"M PLUS Rounded 1c",sans-serif;transition:all .2s}
 .txn-btn.active{border-color:#4a8fff;color:#fff;background:linear-gradient(135deg,#1a5cbf,#2a6dd9)}
 .txn-btn[data-txn="income"].active{background:linear-gradient(135deg,#1a7a4a,#26de81)}
 .txn-btn[data-txn="transfer"].active{background:linear-gradient(135deg,#6a1acc,#a55eea)}
@@ -913,7 +913,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:rgba(74,143,255,.06)}
 .fc{background:rgba(0,10,30,.4);border-radius:14px;padding:16px;border:1px solid rgba(74,143,255,.15)}
 .fn{font-size:14px;font-weight:900;color:#7eb8ff;margin-bottom:4px}.fd{font-size:12px;color:#9bbde0}
 .er{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.er select{flex:1;min-width:200px}
-.notify{position:fixed;top:16px;right:16px;padding:14px 22px;border-radius:14px;font-weight:800;font-size:14px;font-family:'M PLUS Rounded 1c',sans-serif;z-index:9999;opacity:0;transform:translateY(-12px);transition:all .3s cubic-bezier(.34,1.56,.64,1);pointer-events:none;max-width:340px;box-shadow:0 8px 32px rgba(0,0,0,.4);line-height:1.5}
+.notify{position:fixed;top:16px;right:16px;padding:14px 22px;border-radius:14px;font-weight:800;font-size:14px;font-family:"M PLUS Rounded 1c",sans-serif;z-index:9999;opacity:0;transform:translateY(-12px);transition:all .3s cubic-bezier(.34,1.56,.64,1);pointer-events:none;max-width:340px;box-shadow:0 8px 32px rgba(0,0,0,.4);line-height:1.5}
 .notify.show{opacity:1;transform:none}.notify.success{background:linear-gradient(135deg,#26de81,#20bf6b);color:#fff}
 .notify.error{background:linear-gradient(135deg,#ff6b6b,#ee5a24);color:#fff}.notify.info{background:linear-gradient(135deg,#4a8fff,#2d6dd9);color:#fff}
 ::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-thumb{background:#4a8fff;border-radius:3px}
@@ -923,7 +923,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:rgba(74,143,255,.06)}
 <div class="notify" id="notify"></div>
 
 <!-- ===== 会社選択画面 ===== -->
-<div id="company-screen" style="display:none">
+<div id="company-screen">
   <div class="co-title">📒 経費管理システム</div>
   <div class="co-subtitle">会社を選択してください</div>
   <div id="company-grid"></div>
