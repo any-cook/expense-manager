@@ -764,88 +764,131 @@ JSONのみ返答（コードブロック不要）:
     stats();
   });
 
-  // ===== 試算表出力 =====
-  function exportTrialBalance(journals, coName, targetMonth) {
-    const bom = "﻿";
+  // ===== 試算表出力（損益計算書形式）=====
+  function exportTrialBalance(journals, coName, targetMonth, hideZero) {
+    const bom = "\uFEFF";
 
     // 対象データをフィルター
-    let filtered = targetMonth
+    const filtered = targetMonth
       ? journals.filter(j=>(j.date||"").startsWith(targetMonth))
       : journals;
 
     // 科目ごとに借方・貸方を集計
-    const accounts = {};
+    const acc = {};
     const initAcc = (code, name) => {
-      if (!accounts[code]) accounts[code] = {code, name, debit:0, credit:0};
+      if (!acc[code]) acc[code] = {code, name, debit:0, credit:0};
     };
-
     filtered.forEach(j => {
-      // 借方
-      if (j.debit && j.dName) {
-        initAcc(j.debit, j.dName);
-        accounts[j.debit].debit += Number(j.amount || 0);
-      }
-      // 貸方
-      if (j.credit && j.cName) {
-        initAcc(j.credit, j.cName);
-        accounts[j.credit].credit += Number(j.amount || 0);
-      }
+      if (j.debit  && j.dName) { initAcc(j.debit,  j.dName);  acc[j.debit].debit   += Number(j.amount||0); }
+      if (j.credit && j.cName) { initAcc(j.credit, j.cName);  acc[j.credit].credit += Number(j.amount||0); }
     });
 
-    // 科目コード順に並び替え
-    const rows = Object.values(accounts).sort((a,b)=>a.code.localeCompare(b.code));
+    // 損益計算書の科目グループ定義（添付の弥生フォーマットに準拠）
+    const PL_STRUCTURE = [
+      { group:"売上高", codes:["4001"], type:"income" },
+      { group:"売上原価", codes:["5001"], type:"cost" },
+      { group:"販売管理費", codes:[
+        "6001","6002","6003","6004","6101","6102","6103","6201","6202","6203","6204",
+        "6205","6206","6207","6208","6209","6301","6302","6303","6401","6501","6502","6503","2201","1301"
+      ], type:"expense" },
+      { group:"営業外収益", codes:["4002","4003"], type:"other_income" },
+      { group:"営業外費用", codes:["6601","6602"], type:"other_expense" },
+    ];
 
-    // 借方合計・貸方合計
-    const totalDebit  = rows.reduce((s,r)=>s+r.debit, 0);
-    const totalCredit = rows.reduce((s,r)=>s+r.credit, 0);
-
-    // 月次か全期間かの表示
     const period = targetMonth || "全期間";
+    const today  = new Date().toISOString().slice(0,10);
 
     // CSV生成
-    let c = `${coName} 試算表（${period}）
+    let c = "事業所名：" + coName + "\n";
+    c += "集計期間：" + period + "\n";
+    c += "出力日：" + today + "\n\n";
 
-`;
-    c += "科目コード,科目名,借方合計,貸方合計,差額(借方-貸方)\n";
+    // ヘッダー行
+    c += "グループ,科目コード,科目名,借方合計,貸方合計,残高\n";
 
-    rows.forEach(r => {
-      const diff = r.debit - r.credit;
-      c += `${r.code},"${r.name}",${r.debit},${r.credit},${diff}
-`;
+    let totalSales=0, totalCost=0, totalExpense=0;
+    let totalOtherIncome=0, totalOtherExpense=0;
+
+    PL_STRUCTURE.forEach(group => {
+      let groupDebit=0, groupCredit=0;
+      let hasRows = false;
+      const groupRows = [];
+
+      // グループ内の登録済み科目を出力
+      const groupCodes = group.codes;
+      // 実際に使われている科目 + グループのコードリストにある科目
+      const allCodes = new Set([...groupCodes, ...Object.keys(acc).filter(code=>{
+        // 科目グループに属するか判定（コードの先頭で判定）
+        if(group.type==="income")        return code.startsWith("4");
+        if(group.type==="cost")          return code.startsWith("5");
+        if(group.type==="expense")       return code.startsWith("6") || ["2201","1301"].includes(code);
+        if(group.type==="other_income")  return false;
+        if(group.type==="other_expense") return false;
+        return false;
+      })]);
+
+      [...allCodes].sort().forEach(code => {
+        const a = acc[code];
+        if (!a) return;
+        const debit  = a.debit;
+        const credit = a.credit;
+        const bal    = debit - credit;
+        if (hideZero && debit === 0 && credit === 0) return;
+        groupRows.push({ code, name:a.name, debit, credit, bal });
+        groupDebit  += debit;
+        groupCredit += credit;
+        hasRows = true;
+      });
+
+      if (!hasRows && hideZero) return;
+
+      // グループヘッダー
+      c += "[" + group.group + "],,,,, \n";
+
+      // 明細行
+      groupRows.forEach(r => {
+        c += "," + r.code + "," + r.name + "," + r.debit + "," + r.credit + "," + r.bal + "\n";
+      });
+
+      // グループ合計
+      const groupBal = groupDebit - groupCredit;
+      c += group.group + "合計,,,," + groupDebit + "," + groupCredit + "," + groupBal + "\n\n";
+
+      if(group.type==="income")         totalSales        += groupCredit - groupDebit;
+      if(group.type==="cost")           totalCost         += groupDebit  - groupCredit;
+      if(group.type==="expense")        totalExpense      += groupDebit  - groupCredit;
+      if(group.type==="other_income")   totalOtherIncome  += groupCredit - groupDebit;
+      if(group.type==="other_expense")  totalOtherExpense += groupDebit  - groupCredit;
     });
 
-    c += `
-合計,,${totalDebit},${totalCredit},${totalDebit - totalCredit}
-`;
+    // 損益サマリー
+    const grossProfit   = totalSales - totalCost;
+    const operatingProfit = grossProfit - totalExpense;
+    const ordinaryProfit  = operatingProfit + totalOtherIncome - totalOtherExpense;
 
-    // チェック（借方合計=貸方合計のはず）
-    if (totalDebit !== totalCredit) {
-      c += `
-※ 借方合計と貸方合計が一致しません。入力内容を確認してください。
-`;
-    }
+    c += "\n=== 損益サマリー ===\n";
+    c += "売上高合計,,," + totalSales + "\n";
+    c += "売上原価合計,,," + totalCost + "\n";
+    c += "売上総利益,,," + grossProfit + "\n";
+    c += "販売管理費合計,,," + totalExpense + "\n";
+    c += "営業利益,,," + operatingProfit + "\n";
+    c += "営業外収益合計,,," + totalOtherIncome + "\n";
+    c += "営業外費用合計,,," + totalOtherExpense + "\n";
+    c += "経常利益,,," + ordinaryProfit + "\n";
 
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([bom+c], {type:"text/csv;charset=utf-8;"}));
-    a.download = coName + "_試算表_" + period + "_" + new Date().toISOString().slice(0,10) + ".csv";
+    a.download = coName + "_試算表_" + period + "_" + today + ".csv";
     a.click();
     URL.revokeObjectURL(a.href);
   }
 
-  document.querySelectorAll(".tab-btn").forEach(b=>b.addEventListener("click",()=>tabSwitch(b.dataset.tab)));
-
-  document.getElementById("exp-btn").addEventListener("click",()=>{
-    if(!journals.length){notify("データがありません","error");return;}
-    const co=COMPANIES.find(c=>c.id===currentCompany);
-    doCSV(journals,$v("exp-fmt"),co?.name||currentCompany);
-    notify("ダウンロードしました ✨");
-  });
-
-  document.getElementById("trial-btn").addEventListener("click",()=>{
+    document.getElementById("trial-btn").addEventListener("click",()=>{
     if(!journals.length){notify("データがありません","error");return;}
     const co=COMPANIES.find(c=>c.id===currentCompany);
     const month=$v("trial-month");
-    exportTrialBalance(journals, co?.name||currentCompany, month);
+    const hideZero=document.getElementById("trial-hide-zero")?.checked||false;
+    exportTrialBalance(journals, co?.name||currentCompany, month, hideZero);
     notify("試算表をダウンロードしました ✨");
   });
 
@@ -1225,28 +1268,35 @@ tr:last-child td{border-bottom:none}tr:hover td{background:rgba(74,143,255,.06)}
 
     <!-- 試算表 -->
     <div class="card">
-      <div class="card-title">📊 試算表出力</div>
+      <div class="card-title">📊 試算表出力（損益計算書形式）</div>
       <div style="font-size:13px;color:#9bbde0;margin-bottom:16px;line-height:1.7">
-        科目ごとの借方・貸方合計を集計した<strong style="color:#7eb8ff">残高試算表</strong>をCSVで出力します。<br>
-        月を指定すると月次試算表、空欄のままだと全期間の試算表が出力されます。
+        添付の弥生会計フォーマットに準拠した<strong style="color:#7eb8ff">損益計算書形式の試算表</strong>をCSVで出力します。<br>
+        売上高・売上原価・販売管理費・営業外損益に分類して集計します。
       </div>
-      <div style="background:rgba(74,143,255,.08);border:1px solid rgba(74,143,255,.2);border-radius:14px;padding:16px;margin-bottom:16px">
-        <div style="font-size:12px;color:#9bbde0;font-weight:800;margin-bottom:6px">出力イメージ</div>
-        <div style="font-family:monospace;font-size:12px;color:#7eb8ff;line-height:1.8">
-          科目コード | 科目名 | 借方合計 | 貸方合計 | 差額<br>
-          1001 | 現金 | 50,000 | 30,000 | 20,000<br>
-          6202 | 接待交際費 | 33,000 | 0 | 33,000
-        </div>
+      <div style="background:rgba(74,143,255,.08);border:1px solid rgba(74,143,255,.2);border-radius:14px;padding:14px;margin-bottom:16px;font-family:monospace;font-size:12px;color:#7eb8ff;line-height:1.8">
+        [売上高] → 売上高合計<br>
+        [売上原価] → 仕入高合計<br>
+        → 売上総利益<br>
+        [販売管理費] → 給与・交際費・消耗品費...<br>
+        → 営業利益<br>
+        → 経常利益
       </div>
-      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px">
         <div style="display:flex;flex-direction:column;gap:6px;flex:1;min-width:160px">
           <label style="font-size:13px;color:#9bbde0;font-weight:800">📅 対象月（空欄=全期間）</label>
           <input type="month" id="trial-month" style="padding:10px 14px;font-size:14px;border-radius:12px;background:rgba(0,10,30,.5);border:2px solid rgba(74,143,255,.3);color:#e8eaf0;outline:none;width:100%">
         </div>
-        <button id="trial-btn" class="btn" style="background:linear-gradient(135deg,#a55eea,#7c4dff);color:#fff;width:auto;padding:14px 32px;font-size:15px">
-          📊 試算表をダウンロード
-        </button>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <label style="font-size:13px;color:#9bbde0;font-weight:800">⚙️ オプション</label>
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:14px;color:#e8eaf0;font-weight:500;flex-direction:row;background:rgba(74,143,255,.1);border:1px solid rgba(74,143,255,.25);border-radius:10px;padding:10px 16px">
+            <input type="checkbox" id="trial-hide-zero" style="width:18px;height:18px;cursor:pointer;accent-color:#4a8fff">
+            <span>残高が０の科目は表示しない</span>
+          </label>
+        </div>
       </div>
+      <button id="trial-btn" class="btn" style="background:linear-gradient(135deg,#a55eea,#7c4dff);color:#fff;padding:14px 0;font-size:15px">
+        📊 試算表をダウンロード
+      </button>
     </div>
 
   </div>
