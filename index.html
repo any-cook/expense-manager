@@ -761,6 +761,74 @@ JSONのみ返答（コードブロック不要）:
     stats();
   });
 
+  // ===== 試算表出力 =====
+  function exportTrialBalance(journals, coName, targetMonth) {
+    const bom = "﻿";
+
+    // 対象データをフィルター
+    let filtered = targetMonth
+      ? journals.filter(j=>(j.date||"").startsWith(targetMonth))
+      : journals;
+
+    // 科目ごとに借方・貸方を集計
+    const accounts = {};
+    const initAcc = (code, name) => {
+      if (!accounts[code]) accounts[code] = {code, name, debit:0, credit:0};
+    };
+
+    filtered.forEach(j => {
+      // 借方
+      if (j.debit && j.dName) {
+        initAcc(j.debit, j.dName);
+        accounts[j.debit].debit += Number(j.amount || 0);
+      }
+      // 貸方
+      if (j.credit && j.cName) {
+        initAcc(j.credit, j.cName);
+        accounts[j.credit].credit += Number(j.amount || 0);
+      }
+    });
+
+    // 科目コード順に並び替え
+    const rows = Object.values(accounts).sort((a,b)=>a.code.localeCompare(b.code));
+
+    // 借方合計・貸方合計
+    const totalDebit  = rows.reduce((s,r)=>s+r.debit, 0);
+    const totalCredit = rows.reduce((s,r)=>s+r.credit, 0);
+
+    // 月次か全期間かの表示
+    const period = targetMonth || "全期間";
+
+    // CSV生成
+    let c = `${coName} 試算表（${period}）
+
+`;
+    c += "科目コード,科目名,借方合計,貸方合計,差額(借方-貸方)\n";
+
+    rows.forEach(r => {
+      const diff = r.debit - r.credit;
+      c += `${r.code},"${r.name}",${r.debit},${r.credit},${diff}
+`;
+    });
+
+    c += `
+合計,,${totalDebit},${totalCredit},${totalDebit - totalCredit}
+`;
+
+    // チェック（借方合計=貸方合計のはず）
+    if (totalDebit !== totalCredit) {
+      c += `
+※ 借方合計と貸方合計が一致しません。入力内容を確認してください。
+`;
+    }
+
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([bom+c], {type:"text/csv;charset=utf-8;"}));
+    a.download = coName + "_試算表_" + period + "_" + new Date().toISOString().slice(0,10) + ".csv";
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
   document.querySelectorAll(".tab-btn").forEach(b=>b.addEventListener("click",()=>tabSwitch(b.dataset.tab)));
 
   document.getElementById("exp-btn").addEventListener("click",()=>{
@@ -768,6 +836,14 @@ JSONのみ返答（コードブロック不要）:
     const co=COMPANIES.find(c=>c.id===currentCompany);
     doCSV(journals,$v("exp-fmt"),co?.name||currentCompany);
     notify("ダウンロードしました ✨");
+  });
+
+  document.getElementById("trial-btn").addEventListener("click",()=>{
+    if(!journals.length){notify("データがありません","error");return;}
+    const co=COMPANIES.find(c=>c.id===currentCompany);
+    const month=$v("trial-month");
+    exportTrialBalance(journals, co?.name||currentCompany, month);
+    notify("試算表をダウンロードしました ✨");
   });
 
   // 初期化
@@ -1140,6 +1216,33 @@ tr:last-child td{border-bottom:none}tr:hover td{background:rgba(74,143,255,.06)}
         <button id="exp-btn" class="btn btn-ok" style="width:auto;padding:14px 32px">⬇️ ダウンロード</button>
       </div>
     </div>
+
+    <!-- 試算表 -->
+    <div class="card">
+      <div class="card-title">📊 試算表出力</div>
+      <div style="font-size:13px;color:#9bbde0;margin-bottom:16px;line-height:1.7">
+        科目ごとの借方・貸方合計を集計した<strong style="color:#7eb8ff">残高試算表</strong>をCSVで出力します。<br>
+        月を指定すると月次試算表、空欄のままだと全期間の試算表が出力されます。
+      </div>
+      <div style="background:rgba(74,143,255,.08);border:1px solid rgba(74,143,255,.2);border-radius:14px;padding:16px;margin-bottom:16px">
+        <div style="font-size:12px;color:#9bbde0;font-weight:800;margin-bottom:6px">出力イメージ</div>
+        <div style="font-family:monospace;font-size:12px;color:#7eb8ff;line-height:1.8">
+          科目コード | 科目名 | 借方合計 | 貸方合計 | 差額<br>
+          1001 | 現金 | 50,000 | 30,000 | 20,000<br>
+          6202 | 接待交際費 | 33,000 | 0 | 33,000
+        </div>
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+        <div style="display:flex;flex-direction:column;gap:6px;flex:1;min-width:160px">
+          <label style="font-size:13px;color:#9bbde0;font-weight:800">📅 対象月（空欄=全期間）</label>
+          <input type="month" id="trial-month" style="padding:10px 14px;font-size:14px;border-radius:12px;background:rgba(0,10,30,.5);border:2px solid rgba(74,143,255,.3);color:#e8eaf0;outline:none;width:100%">
+        </div>
+        <button id="trial-btn" class="btn" style="background:linear-gradient(135deg,#a55eea,#7c4dff);color:#fff;width:auto;padding:14px 32px;font-size:15px">
+          📊 試算表をダウンロード
+        </button>
+      </div>
+    </div>
+
   </div>
 </div>
 </body>
