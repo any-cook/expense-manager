@@ -71,7 +71,8 @@
   const KEY = "keihi_gemini_key";
   function getKey() { return localStorage.getItem(KEY) || ""; }
   function setKey(k) {
-    ["keihi_api_key","keihi_v2_api_key","keihi_gemini_key"].forEach(n=>localStorage.removeItem(n));
+    // 古いキー名だけ削除（現在のKEYは削除しない）
+    ["keihi_api_key","keihi_v2_api_key"].forEach(n=>localStorage.removeItem(n));
     localStorage.setItem(KEY, k.trim());
   }
   function checkKey() {
