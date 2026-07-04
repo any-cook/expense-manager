@@ -883,7 +883,17 @@ JSONのみ返答（コードブロック不要）:
     URL.revokeObjectURL(a.href);
   }
 
-    document.getElementById("trial-btn").addEventListener("click",()=>{
+  // ===== タブボタン・CSVエクスポートのイベントリスナー =====
+  document.querySelectorAll(".tab-btn").forEach(b=>b.addEventListener("click",()=>tabSwitch(b.dataset.tab)));
+
+  document.getElementById("exp-btn").addEventListener("click",()=>{
+    if(!journals.length){notify("データがありません","error");return;}
+    const co=COMPANIES.find(c=>c.id===currentCompany);
+    doCSV(journals,$v("exp-fmt"),co?.name||currentCompany);
+    notify("ダウンロードしました ✨");
+  });
+
+  document.getElementById("trial-btn").addEventListener("click",()=>{
     if(!journals.length){notify("データがありません","error");return;}
     const co=COMPANIES.find(c=>c.id===currentCompany);
     const month=$v("trial-month");
