@@ -316,6 +316,7 @@ JSONのみ返答（コードブロック不要）:
   // ===== Firebase =====
   let journals=[],editId=null;
   let filterMonth="", filterCat="all"; // 月別・分類フィルター
+  let searchText=""; // フリーワード検索
   let sortMode="date_desc"; // ソート順：date_desc=日付新しい順（デフォルト）
   let viewMode="list"; // 表示モード：list=通常一覧、group=科目別グループ
 
@@ -371,12 +372,18 @@ JSONのみ返答（コードブロック不要）:
 
   // フィルター＆ソート適用
   function applyFilter(list) {
+    const q = searchText.trim().toLowerCase();
     let filtered = list.filter(j=>{
       const monthOK = !filterMonth || (j.date||"").startsWith(filterMonth);
       const catOK   = filterCat==="all"
         || (filterCat==="sales"   && getCategory(j)==="sales")
         || (filterCat==="expense" && getCategory(j)==="expense");
-      return monthOK && catOK;
+      // フリーワード検索（取引先・摘要・品目・科目名・インボイス番号・取引手段で検索）
+      const searchOK = !q || [
+        j.payee, j.desc, j.item, j.dName, j.cName,
+        j.inv, j.payment, j.date, String(j.amount||"")
+      ].some(v=>(v||"").toLowerCase().includes(q));
+      return monthOK && catOK && searchOK;
     });
     // ソート
     filtered = [...filtered].sort((a,b)=>{
@@ -422,6 +429,13 @@ JSONのみ返答（コードブロック不要）:
     groupOpenState[key] = !groupOpenState[key];
     renderList();
   };
+
+  // 検索ワードをハイライト
+  function highlight(text, q) {
+    if (!q || !text) return text||"";
+    const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return String(text).replace(new RegExp("("+escaped+")", "gi"), '<mark style="background:rgba(255,214,68,.4);color:#ffd32a;border-radius:3px;padding:0 2px">$1</mark>');
+  }
 
   function renderGrouped(filtered) {
     // 科目別にグループ化
@@ -550,9 +564,9 @@ JSONのみ返答（コードブロック不要）:
       <td><span class="inv-no">${j.inv||"インボイス登録なし"}</span></td>
       <td style="white-space:nowrap">${j.date||""}</td>
       <td>${j.payment?'<span class="bd" style="background:rgba(74,143,255,.12);color:#7eb8ff">'+j.payment+'</span>':"-"}</td>
-      <td>${(j.payee||"-").slice(0,10)}${(j.payee||"").length>10?"…":""}</td>
-      <td>${(j.desc||"-").slice(0,12)}${(j.desc||"").length>12?"…":""}</td>
-      <td>${(j.item||"-").slice(0,12)}${(j.item||"").length>12?"…":""}</td>
+      <td>${highlight((j.payee||"-").slice(0,10),q2)}${(j.payee||"").length>10?"…":""}</td>
+      <td>${highlight((j.desc||"-").slice(0,12),q2)}${(j.desc||"").length>12?"…":""}</td>
+      <td>${highlight((j.item||"-").slice(0,12),q2)}${(j.item||"").length>12?"…":""}</td>
       <td><span class="bd blue">${j.dName||""}</span></td>
       <td><span class="bd green">${j.cName||""}</span></td>
       <td class="num">¥${Number(j.amount||0).toLocaleString()}</td>
@@ -580,6 +594,21 @@ JSONのみ返答（コードブロック不要）:
   function getKeepForm(){
     return document.getElementById("keep-form")?.checked || false;
   }
+
+  // ===== 検索処理 =====
+  window.doSearch=function(val){
+    searchText = val.trim();
+    renderList();stats();
+    // ヒット件数を表示
+    const filtered = applyFilter(journals);
+    const cnt = document.getElementById("search-count");
+    if(searchText) {
+      cnt.textContent = filtered.length+"件ヒット";
+      cnt.style.display = "block";
+    } else {
+      cnt.style.display = "none";
+    }
+  };
 
   // ===== 表示モード切替 =====
   window.setViewMode=function(mode){
@@ -626,8 +655,9 @@ JSONのみ返答（コードブロック不要）:
     renderList();stats();
   };
   window.clearFilter=function(){
-    filterMonth="";filterCat="all";sortMode="date_desc";viewMode="list";
+    filterMonth="";filterCat="all";sortMode="date_desc";viewMode="list";searchText="";
     document.getElementById("filter-month").value="";
+    document.getElementById("search-input").value="";
     document.querySelectorAll(".fcat-btn").forEach(b=>b.classList.toggle("active",b.dataset.cat==="all"));
     document.querySelectorAll(".sort-btn").forEach(b=>b.classList.toggle("active",b.dataset.sort==="date_desc"));
     document.querySelectorAll(".view-btn").forEach(b=>b.classList.toggle("active",b.dataset.view==="list"));
@@ -1278,6 +1308,14 @@ tr:last-child td{border-bottom:none}tr:hover td{background:rgba(74,143,255,.06)}
 
     <!-- フィルター・ソートUI -->
     <div class="card" style="padding:16px 20px;margin-bottom:14px">
+      <!-- 検索バー -->
+      <div style="margin-bottom:14px">
+        <div style="position:relative">
+          <span style="position:absolute;left:14px;top:50%;transform:translateY(-50%);font-size:16px;pointer-events:none">🔍</span>
+          <input type="text" id="search-input" placeholder="取引先・摘要・品目・科目名・金額などで検索..." style="width:100%;padding:12px 14px 12px 42px;font-size:14px;border-radius:12px;background:rgba(0,10,30,.5);border:2px solid rgba(74,143,255,.3);color:#e8eaf0;outline:none;font-family:&quot;M PLUS Rounded 1c&quot;,sans-serif" oninput="doSearch(this.value)">
+          <span id="search-count" style="position:absolute;right:14px;top:50%;transform:translateY(-50%);font-size:12px;color:#7eb8ff;font-weight:700;display:none"></span>
+        </div>
+      </div>
       <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
         <div style="display:flex;flex-direction:column;gap:5px;flex:1;min-width:150px">
           <label style="font-size:12px;color:#9bbde0;font-weight:800">📅 月を選択</label>
