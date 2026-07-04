@@ -104,6 +104,7 @@
 
   const RULES = [
     {kw:["ガソリン","燃料","高速","車検","洗車"],d:"6102",c:"1001",r:10},
+    {kw:["車両リース","リース料","車リース"],d:"6103",c:"2101",r:10},
     {kw:["車両","駐車"],d:"6103",c:"1001",r:10},
     {kw:["ホテル","宿泊","出張"],d:"6102",c:"1001",r:10},
     {kw:["電話","携帯","インターネット","通信"],d:"6201",c:"2101",r:10},
@@ -183,17 +184,19 @@
     return "other";
   }
 
-  function localJ(desc, amount, rate, item="") {
+  function localJ(desc, amount, rate, item="", txType="expense") {
     // 摘要と品目・内容を結合して判定テキストを作成
     const text = (desc + " " + item).trim();
-    for(const r of RULES) {
-      if(r.kw.some(k=>text.includes(k))) {
-        // 非課税科目またはルールのレートが0なら強制0
-        const rt = (NON_TAX_SET.has(r.d) || r.r===0) ? 0 : (rate??r.r);
-        return {debit:r.d,debitName:accName(r.d),credit:r.c,creditName:accName(r.c),taxRate:rt,taxAmount:tax(amount,rt),confidence:0.85};
+
+    // 支出・振替の場合のみRULESを適用（収入は売上高に固定）
+    if(txType !== "income") {
+      for(const r of RULES) {
+        if(r.kw.some(k=>text.includes(k))) {
+          const rt = (NON_TAX_SET.has(r.d) || r.r===0) ? 0 : (rate??r.r);
+          return {debit:r.d,debitName:accName(r.d),credit:r.c,creditName:accName(r.c),taxRate:rt,taxAmount:tax(amount,rt),confidence:0.85};
+        }
       }
     }
-    // デフォルト：経費として雑費で返す（収入の場合はAIまたはTXN_TYPEで上書きされる）
     return {debit:"6501",debitName:"雑費",credit:"1001",creditName:"現金",taxRate:rate??10,taxAmount:tax(amount,rate??10),confidence:0.5};
   }
 
@@ -253,11 +256,12 @@ JSON format: {"date":"YYYY-MM-DD","payee":"店名または取引先","desc":"摘
   }
 
   // ===== AI自動仕訳 =====
-  async function aiJournal(desc,item,payee,amount,rate) {
-    if(!checkKey()) return localJ(desc,amount,rate,item);
+  async function aiJournal(desc,item,payee,amount,rate,txType="expense") {
+    if(!checkKey()) return localJ(desc,amount,rate,item,txType);
     try{
       // 摘要と品目を結合して判定テキストを作成
       const judgeText = [desc, item].filter(Boolean).join(" / ");
+      const txTypeLabel = txType==="income"?"収入（売上）":txType==="expense"?"支出（経費）":"振替";
       const prompt=`あなたは日本の会計専門家です。以下の経費情報から最適な勘定科目を判断し、JSONのみで回答してください。
 
 【摘要】${desc}
@@ -265,6 +269,7 @@ JSON format: {"date":"YYYY-MM-DD","payee":"店名または取引先","desc":"摘
 【取引先】${payee}
 【金額】${amount}円
 【消費税率】${rate}%
+【取引種別】${txTypeLabel}
 【判定テキスト（摘要＋品目）】${judgeText}
 
 利用可能な勘定科目: ${ACCS.map(a=>a.c+":"+a.n).join(", ")}
@@ -284,7 +289,7 @@ JSONのみ返答（コードブロック不要）:
 {"debit":"科目コード","debitName":"科目名","credit":"科目コード","creditName":"科目名","taxAmount":消費税額の整数,"taxRate":消費税率の整数,"confidence":確信度0から1}`;
       const text=await callGemini([{text:prompt}]);
       const m=text.replace(/```json\s*/gi,"").replace(/```\s*/g,"").match(/\{[\s\S]*\}/);
-      if(!m) return localJ(desc,amount,rate,item);
+      if(!m) return localJ(desc,amount,rate,item,txType);
       const parsed = JSON.parse(m[0]);
       // 非課税科目なら戻り値も強制0
       const dc = String(parsed.debit||"");
@@ -294,7 +299,7 @@ JSONのみ返答（コードブロック不要）:
         parsed.taxAmount = 0;
       }
       return parsed;
-    }catch{return localJ(desc,amount,rate,item);}
+    }catch{return localJ(desc,amount,rate,item,txType);}
   }
 
   // ===== UI =====
@@ -867,7 +872,7 @@ JSONのみ返答（コードブロック不要）:
     if(!amount){notify("金額を入力してください","error");return;}
     const btn=document.getElementById("ai-btn");
     btn.textContent="⏳ AI判定中...";btn.disabled=true;
-    const r=await aiJournal(desc,item,payee,amount,rate);
+    const r=await aiJournal(desc,item,payee,amount,rate,currentTxType);
     btn.textContent="🤖 AI自動仕訳";btn.disabled=false;
 
     // 借方科目をセット
