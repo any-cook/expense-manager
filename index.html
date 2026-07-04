@@ -415,57 +415,111 @@ JSONのみ返答（コードブロック不要）:
   // 現金・預金科目（これらが借方の場合は貸方科目でグループ化）
   const CASH_CODES = new Set(["1001","1002","1003","1004"]);
 
+  // 科目グループの開閉状態（デフォルト：全部開く）
+  const groupOpenState = {};
+
+  window.toggleGroup = function(key) {
+    groupOpenState[key] = !groupOpenState[key];
+    renderList();
+  };
+
   function renderGrouped(filtered) {
     // 科目別にグループ化
-    // 借方が現金・預金 → 貸方科目でグループ化（売上入金など）
-    // それ以外 → 借方科目でグループ化（経費など）
     const groups = {};
     filtered.forEach(j=>{
       const useCr = CASH_CODES.has(j.debit||"");
       const code = useCr ? (j.credit||"unknown") : (j.debit||"unknown");
       const name = useCr ? (j.cName||"不明") : (j.dName||"不明");
       const key  = code + "__" + name;
-      if(!groups[key]) groups[key]={code, name, items:[], total:0, taxTotal:0};
+      if(!groups[key]) groups[key]={code, name, items:[], total:0, taxTotal:0, taxable10:0, taxable8:0, nonTax:0, tax10:0, tax8:0};
       groups[key].items.push(j);
       groups[key].total    += Number(j.amount||0);
       groups[key].taxTotal += Number(j.tAmt||0);
+      const rate = Number(j.tRate??10);
+      if(rate===10)      { groups[key].taxable10 += Number(j.amount||0); groups[key].tax10 += Number(j.tAmt||0); }
+      else if(rate===8)  { groups[key].taxable8  += Number(j.amount||0); groups[key].tax8  += Number(j.tAmt||0); }
+      else               { groups[key].nonTax    += Number(j.amount||0); }
     });
-    // 科目コード順に並び替え
+
     const sorted = Object.values(groups).sort((a,b)=>a.code.localeCompare(b.code));
     let html = "";
+
     sorted.forEach(g=>{
-      // グループヘッダー行
-      html += `<tr class="group-header">
+      const key   = g.code + "__" + g.name;
+      // 初回は開いた状態（groupOpenStateがundefinedの場合はtrue=開く）
+      const isOpen = groupOpenState[key] !== false;
+      const arrow  = isOpen ? "▼" : "▶";
+
+      // グループヘッダー行（クリックで開閉）
+      html += `<tr class="group-header" onclick="toggleGroup('${key.replace(/'/g,"\'")}') " style="cursor:pointer">
         <td colspan="10">
           <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
             <div style="display:flex;align-items:center;gap:10px">
+              <span style="color:#7eb8ff;font-size:14px;font-weight:900;min-width:18px">${arrow}</span>
               <span style="background:rgba(74,143,255,.25);color:#7eb8ff;font-size:12px;font-weight:800;padding:3px 10px;border-radius:6px;font-family:monospace">${g.code}</span>
               <span style="font-size:15px;font-weight:900;color:#7eb8ff">${g.name}</span>
               <span style="font-size:12px;color:#9bbde0">${g.items.length}件</span>
             </div>
-            <div style="display:flex;gap:16px;font-size:13px;font-weight:800">
+            <div style="display:flex;gap:16px;font-size:13px;font-weight:800;flex-wrap:wrap">
               <span style="color:#26de81">合計 ¥${g.total.toLocaleString()}</span>
               <span style="color:#ffd32a">消費税 ¥${g.taxTotal.toLocaleString()}</span>
             </div>
           </div>
+          ${isOpen ? `<div style="display:flex;gap:16px;margin-top:8px;padding-top:8px;border-top:1px solid rgba(74,143,255,.15);flex-wrap:wrap;font-size:12px;color:#9bbde0">
+            ${g.taxable10>0?`<span>🟣 10%対象: ¥${g.taxable10.toLocaleString()} (税額¥${g.tax10.toLocaleString()})</span>`:""}
+            ${g.taxable8>0?`<span>🟠 8%対象: ¥${g.taxable8.toLocaleString()} (税額¥${g.tax8.toLocaleString()})</span>`:""}
+            ${g.nonTax>0?`<span>⚪ 非課税: ¥${g.nonTax.toLocaleString()}</span>`:""}
+            <span style="color:#7eb8ff;font-weight:800">税抜計: ¥${(g.total-g.taxTotal).toLocaleString()}</span>
+          </div>` : ""}
         </td>
       </tr>`;
-      // 明細行
-      g.items.forEach(j=>{
-        html += `<tr class="group-row">
-          <td><span class="inv-no">${j.inv||"インボイス登録なし"}</span></td>
-          <td style="white-space:nowrap">${j.date||""}</td>
-          <td>${j.payment?'<span class="bd" style="background:rgba(74,143,255,.12);color:#7eb8ff">'+j.payment+'</span>':"-"}</td>
-          <td>${(j.payee||"-").slice(0,10)}${(j.payee||"").length>10?"…":""}</td>
-          <td>${(j.desc||"-").slice(0,14)}${(j.desc||"").length>14?"…":""}</td>
-          <td>${(j.item||"-").slice(0,12)}${(j.item||"").length>12?"…":""}</td>
-          <td><span class="bd green">${j.cName||""}</span></td>
-          <td class="num">¥${Number(j.amount||0).toLocaleString()}</td>
-          <td class="num"><span class="bd ${Number(j.tRate??10)===8?"orange":"purple"}">${j.tRate??10}%</span><div style="margin-top:3px">¥${Number(j.tAmt||0).toLocaleString()}</div></td>
-          <td><button class="bs copy" onclick="copyJournal('${j.id}')">複写</button><button class="bs" onclick="startEdit('${j.id}')">編集</button><button class="bs del" onclick="delJournal('${j.id}')">削除</button></td>
-        </tr>`;
-      });
+
+      // 明細行（閉じている場合は非表示）
+      if (isOpen) {
+        g.items.forEach(j=>{
+          html += `<tr class="group-row">
+            <td><span class="inv-no">${j.inv||"インボイス登録なし"}</span></td>
+            <td style="white-space:nowrap">${j.date||""}</td>
+            <td>${j.payment?'<span class="bd" style="background:rgba(74,143,255,.12);color:#7eb8ff">'+j.payment+'</span>':"-"}</td>
+            <td>${(j.payee||"-").slice(0,10)}${(j.payee||"").length>10?"…":""}</td>
+            <td>${(j.desc||"-").slice(0,14)}${(j.desc||"").length>14?"…":""}</td>
+            <td>${(j.item||"-").slice(0,12)}${(j.item||"").length>12?"…":""}</td>
+            <td><span class="bd green">${j.cName||""}</span></td>
+            <td class="num">¥${Number(j.amount||0).toLocaleString()}</td>
+            <td class="num"><span class="bd ${Number(j.tRate??10)===8?"orange":"purple"}">${j.tRate??10}%</span><div style="margin-top:3px">¥${Number(j.tAmt||0).toLocaleString()}</div></td>
+            <td><button class="bs copy" onclick="copyJournal('${j.id}')">複写</button><button class="bs" onclick="startEdit('${j.id}')">編集</button><button class="bs del" onclick="delJournal('${j.id}')">削除</button></td>
+          </tr>`;
+        });
+      }
     });
+
+    // 全科目合計行
+    const grandTotal    = Object.values(groups).reduce((s,g)=>s+g.total,0);
+    const grandTax      = Object.values(groups).reduce((s,g)=>s+g.taxTotal,0);
+    const grandTaxable10 = Object.values(groups).reduce((s,g)=>s+g.taxable10,0);
+    const grandTax10    = Object.values(groups).reduce((s,g)=>s+g.tax10,0);
+    const grandTaxable8 = Object.values(groups).reduce((s,g)=>s+g.taxable8,0);
+    const grandTax8     = Object.values(groups).reduce((s,g)=>s+g.tax8,0);
+    const grandNonTax   = Object.values(groups).reduce((s,g)=>s+g.nonTax,0);
+
+    html += `<tr style="background:rgba(74,143,255,.08);border-top:2px solid rgba(74,143,255,.4)">
+      <td colspan="10" style="padding:14px 16px">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+          <span style="font-size:14px;font-weight:900;color:#7eb8ff">📊 全科目合計（${filtered.length}件）</span>
+          <div style="display:flex;gap:20px;flex-wrap:wrap;font-size:13px;font-weight:800">
+            <span style="color:#26de81">税込合計 ¥${grandTotal.toLocaleString()}</span>
+            <span style="color:#ffd32a">消費税合計 ¥${grandTax.toLocaleString()}</span>
+            <span style="color:#7eb8ff">税抜合計 ¥${(grandTotal-grandTax).toLocaleString()}</span>
+          </div>
+        </div>
+        <div style="display:flex;gap:16px;margin-top:8px;flex-wrap:wrap;font-size:12px;color:#9bbde0">
+          ${grandTaxable10>0?`<span>🟣 10%対象: ¥${grandTaxable10.toLocaleString()} (税額¥${grandTax10.toLocaleString()})</span>`:""}
+          ${grandTaxable8>0?`<span>🟠 8%対象: ¥${grandTaxable8.toLocaleString()} (税額¥${grandTax8.toLocaleString()})</span>`:""}
+          ${grandNonTax>0?`<span>⚪ 非課税: ¥${grandNonTax.toLocaleString()}</span>`:""}
+        </div>
+      </td>
+    </tr>`;
+
     return html;
   }
 
@@ -531,7 +585,28 @@ JSONのみ返答（コードブロック不要）:
   window.setViewMode=function(mode){
     viewMode=mode;
     document.querySelectorAll(".view-btn").forEach(b=>b.classList.toggle("active",b.dataset.view===mode));
+    // 科目別モードの時だけ全開・全閉ボタンを表示
+    document.getElementById("expand-all-btn").style.display  = mode==="group" ? "inline-block" : "none";
+    document.getElementById("collapse-all-btn").style.display = mode==="group" ? "inline-block" : "none";
     renderList();stats();
+  };
+
+  // 全展開
+  window.expandAll=function(){
+    Object.keys(groupOpenState).forEach(k=>groupOpenState[k]=true);
+    renderList();
+  };
+  // 全折畳
+  window.collapseAll=function(){
+    // 全グループを閉じる
+    const filtered = applyFilter(journals);
+    filtered.forEach(j=>{
+      const useCr = CASH_CODES.has(j.debit||"");
+      const code  = useCr ? (j.credit||"unknown") : (j.debit||"unknown");
+      const name  = useCr ? (j.cName||"不明") : (j.dName||"不明");
+      groupOpenState[code+"__"+name] = false;
+    });
+    renderList();
   };
 
   // ===== ソート操作 =====
@@ -1227,9 +1302,11 @@ tr:last-child td{border-bottom:none}tr:hover td{background:rgba(74,143,255,.06)}
         </div>
         <div style="display:flex;flex-direction:column;gap:5px">
           <label style="font-size:12px;color:#9bbde0;font-weight:800">📋 表示形式</label>
-          <div style="display:flex;gap:8px">
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
             <button class="view-btn active" data-view="list"  onclick="setViewMode('list')">📋 一覧</button>
             <button class="view-btn"        data-view="group" onclick="setViewMode('group')">📁 科目別</button>
+            <button id="expand-all-btn"  class="sort-btn" onclick="expandAll()"  style="display:none">▼ 全展開</button>
+            <button id="collapse-all-btn" class="sort-btn" onclick="collapseAll()" style="display:none">▶ 全折畳</button>
           </div>
         </div>
         <button onclick="clearFilter()" style="padding:9px 16px;border:none;border-radius:10px;background:rgba(255,255,255,.08);color:#9bbde0;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">✕ クリア</button>
