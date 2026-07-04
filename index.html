@@ -136,6 +136,31 @@
     expense:  { label:"📋 支出", debit:"6501", credit:"1001" }, // 雑費 / 現金
     transfer: { label:"🔄 振替", debit:"1002", credit:"1001" }, // 普通預金 / 現金
   };
+
+  // 取引手段 → 科目コードのマッピング
+  const PAYMENT_CODE = {
+    "現金":             "1001",
+    "普通預金":          "1002",
+    "クレジットカード":   "2101", // 未払金（クレカは後払いなので負債）
+  };
+
+  // 取引手段から借方・貸方の科目を自動決定する関数
+  function getAccountByPayment(txType, payment) {
+    const payCode = PAYMENT_CODE[payment] || null;
+    if (!payCode) return null; // 取引手段未選択
+
+    if (txType === "income") {
+      // 収入：借方=取引手段の科目、貸方=売上高
+      return { debit: payCode, credit: "4001" };
+    } else if (txType === "expense") {
+      // 支出：借方=費用科目（AI判定）、貸方=取引手段の科目
+      return { credit: payCode };
+    } else if (txType === "transfer") {
+      // 振替：借方・貸方は手動設定
+      return null;
+    }
+    return null;
+  }
   let keepForm = false; // 連続登録フラグ
   let currentTxType = "expense"; // 現在の取引種別（デフォルト：支出）
 
@@ -587,10 +612,20 @@ JSONのみ返答（コードブロック不要）:
     document.querySelectorAll(".txn-btn").forEach(b=>b.classList.toggle("active",b.dataset.txn===type));
     const t=TXN_TYPE[type];
     if(!t) return;
-    // 借方・貸方を自動セット
-    $s("f-dr", t.debit);
-    $s("f-cr", t.credit);
-    // 収入の場合は消費税率を10%に、振替は非課税に
+
+    // 取引手段が選択されていればそれを優先、なければデフォルト科目
+    const payment = $v("f-payment");
+    const acct = getAccountByPayment(type, payment);
+
+    if (acct) {
+      $s("f-dr", acct.debit  || t.debit);
+      $s("f-cr", acct.credit || t.credit);
+    } else {
+      $s("f-dr", t.debit);
+      $s("f-cr", t.credit);
+    }
+
+    // 振替は非課税に、収入は10%に
     if(type==="transfer"){ $s("f-tr","0"); $s("f-tx","0"); }
     else if(type==="income"){ $s("f-tr","10"); }
   };
@@ -732,6 +767,26 @@ JSONのみ返答（コードブロック不要）:
 
   document.getElementById("f-amount").addEventListener("input",()=>{const a=parseInt($v("f-amount"))||0,r=parseInt($v("f-tr"))||10;$s("f-tx",tax(a,r));});
 
+  // 取引手段変更時に借方・貸方を自動反映
+  document.getElementById("f-payment").addEventListener("change",function(){
+    const payment = this.value;
+    const acct = getAccountByPayment(currentTxType, payment);
+    if (!acct) return;
+
+    if (acct.debit)  {
+      $s("f-dr", acct.debit);
+    }
+    if (acct.credit) {
+      $s("f-cr", acct.credit);
+    }
+    // 非課税チェック
+    const sel = document.getElementById("f-dr");
+    const dc = sel.value;
+    if(NON_TAX_SET.has(dc)) {
+      $s("f-tr",0); $s("f-tx",0);
+    }
+  });
+
   // 借方科目変更時に非課税科目なら自動で消費税0%にする
   document.getElementById("f-dr").addEventListener("change",()=>{
     const dc=$v("f-dr");
@@ -819,19 +874,18 @@ JSONのみ返答（コードブロック不要）:
     let debitCode = String(r.debit||"6501");
     let creditCode = String(r.credit||"1001");
 
-    // 収入タイプの場合：借方=現金/預金、貸方=売上高 になるよう補正
-    if(currentTxType === "income") {
-      // AIが売上高を借方に置いた場合は入れ替える
-      const CASH_BANK = ["1001","1002","1003","1004"];
-      const INCOME_CODES = ["4001","4002","4003"];
-      if(INCOME_CODES.includes(debitCode) && !INCOME_CODES.includes(creditCode)) {
-        // 借方と貸方を入れ替える
-        [debitCode, creditCode] = [creditCode, debitCode];
-      }
-      // 売上高が含まれていない場合は貸方を売上高に設定
-      if(!INCOME_CODES.includes(creditCode)) {
-        creditCode = "4001";
-      }
+    // 取引手段から科目を取得
+    const pmtAI = $v("f-payment");
+    const acctAI = getAccountByPayment(currentTxType, pmtAI);
+
+    if (currentTxType === "income") {
+      // 収入：貸方=売上高、借方=取引手段の科目（またはAIの結果）
+      creditCode = "4001";
+      debitCode  = acctAI?.debit || PAYMENT_CODE[pmtAI] || "1001";
+    } else if (currentTxType === "expense" && acctAI?.credit) {
+      // 支出：貸方=取引手段の科目、借方=AIの費用科目
+      creditCode = acctAI.credit;
+      // 借方はAIの結果をそのまま使う（費用科目）
     }
 
     $s("f-dr", debitCode);
