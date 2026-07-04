@@ -1090,69 +1090,71 @@ JSONのみ返答（コードブロック不要）:
     const months = [...new Set(
       journals.map(j=>(j.date||"").slice(0,7)).filter(m=>m.length===7)
     )].sort();
-
     if (!months.length) { notify("データがありません","error"); return; }
 
-    // 月ごとに科目別集計
-    const monthData = {}; // { "2025-09": { "6001": {debit:0, credit:0, name:""}, ... } }
+    // 損益計算書の科目グループ定義
+    // 役員借入金(2201)・役員貸付金(1301)・借入金は除外（BS科目）
+    const BS_CODES = new Set(["1001","1002","1003","1004","2001","2101","2201","1301","2301","2401","1701"]);
+
+    const PL_GROUPS = [
+      { label:"[売上高]",
+        filter: c => c.startsWith("4") && !["4002","4003"].includes(c),
+        type:"income" },
+      { label:"[売上原価]",
+        filter: c => c.startsWith("5"),
+        type:"cost" },
+      { label:"[販売管理費]",
+        filter: c => c.startsWith("6") && !["6601","6602"].includes(c) && !BS_CODES.has(c),
+        type:"expense" },
+      { label:"[営業外収益]",
+        filter: c => ["4002","4003"].includes(c),
+        type:"oi" },
+      { label:"[営業外費用]",
+        filter: c => ["6601","6602"].includes(c),
+        type:"oe" },
+    ];
+
+    // 月ごとに科目別集計（借方・貸方を正確に記録）
+    const monthData = {};
     months.forEach(m => { monthData[m] = {}; });
 
+    const codeNames = {};
     journals.forEach(j => {
       const m = (j.date||"").slice(0,7);
       if (!monthData[m]) return;
+      const amt = Number(j.amount||0);
 
-      const addAcc = (code, name, debit, credit) => {
-        if (!code) return;
-        if (!monthData[m][code]) monthData[m][code] = {name, debit:0, credit:0};
-        monthData[m][code].debit  += debit;
-        monthData[m][code].credit += credit;
-      };
-      addAcc(j.debit,  j.dName, Number(j.amount||0), 0);
-      addAcc(j.credit, j.cName, 0, Number(j.amount||0));
+      // 借方科目に加算
+      if (j.debit && j.dName) {
+        codeNames[j.debit] = j.dName;
+        if (!monthData[m][j.debit]) monthData[m][j.debit] = {debit:0, credit:0};
+        monthData[m][j.debit].debit += amt;
+      }
+      // 貸方科目に加算
+      if (j.credit && j.cName) {
+        codeNames[j.credit] = j.cName;
+        if (!monthData[m][j.credit]) monthData[m][j.credit] = {debit:0, credit:0};
+        monthData[m][j.credit].credit += amt;
+      }
     });
 
-    // 全月で使われている科目コードをまとめる
+    // 全月の全コードを収集
     const allCodes = new Set();
-    Object.values(monthData).forEach(mData => Object.keys(mData).forEach(c => allCodes.add(c)));
+    Object.values(monthData).forEach(md => Object.keys(md).forEach(c => allCodes.add(c)));
 
-    // 科目名マップ
-    const codeNames = {};
-    journals.forEach(j => {
-      if (j.debit  && j.dName) codeNames[j.debit]  = j.dName;
-      if (j.credit && j.cName) codeNames[j.credit] = j.cName;
-    });
-
-    // 損益計算書の科目グループ定義
-    const PL_GROUPS = [
-      { label:"[売上高]",     filter: c => c.startsWith("4") && !["4002","4003"].includes(c), type:"income"  },
-      { label:"[売上原価]",   filter: c => c.startsWith("5"), type:"cost"     },
-      { label:"[販売管理費]", filter: c => (c.startsWith("6") && !["6601","6602"].includes(c)) || ["2201","1301"].includes(c), type:"expense" },
-      { label:"[営業外収益]", filter: c => ["4002","4003"].includes(c), type:"oi" },
-      { label:"[営業外費用]", filter: c => ["6601","6602"].includes(c), type:"oe" },
-    ];
-
-    // ヘッダー行：勘定科目 | 4月度 | 5月度 | ...
-    const monthLabels = months.map(m => {
-      const [y, mo] = m.split("-");
-      return mo + "月度";
-    });
-
+    // ヘッダー
+    const monthLabels = months.map(m => m.split("-")[1] + "月度");
     let c = "残高試算表（年間推移）\n";
     c += "事業所名：" + coName + "\n";
     c += "出力日：" + today + "\n\n";
-
-    // ヘッダー
     c += "勘定科目," + monthLabels.join(",") + "\n";
 
-    // グループ別に出力
-    const groupTotals = {}; // type -> { month -> amount }
+    const groupTotals = {};
 
     PL_GROUPS.forEach(group => {
-      // グループ内の科目を取得
       const codes = [...allCodes].filter(group.filter).sort();
       if (!codes.length) return;
 
-      // グループ行
       c += group.label + "," + months.map(()=>"").join(",") + "\n";
 
       let groupMonthTotals = {};
@@ -1160,42 +1162,34 @@ JSONのみ返答（コードブロック不要）:
 
       codes.forEach(code => {
         const name = codeNames[code] || code;
-        // 月ごとの残高を計算
         const vals = months.map(m => {
           const d = monthData[m][code];
           if (!d) return 0;
-          // 収益科目は貸方残高（credit-debit）、費用・資産科目は借方残高（debit-credit）
-          const isIncomeSide = group.type === "income" || group.type === "oi";
-          return isIncomeSide ? (d.credit - d.debit) : (d.debit - d.credit);
+          // 収益科目（売上高等）：貸方－借方
+          // 費用科目（経費等）：借方－貸方
+          const isIncome = (group.type === "income" || group.type === "oi");
+          return isIncome ? (d.credit - d.debit) : (d.debit - d.credit);
         });
 
-        // hideZeroが有効の場合、全月0ならスキップ
         if (hideZero && vals.every(v => v === 0)) return;
-
-        vals.forEach((v, i) => { groupMonthTotals[months[i]] += v; });
+        vals.forEach((v,i) => { groupMonthTotals[months[i]] += v; });
         c += name + "," + vals.join(",") + "\n";
       });
 
-      // グループ合計行
       const totalVals = months.map(m => groupMonthTotals[m]);
-      c += group.label.replace(/[\[\]]/g,"") + "合計," + totalVals.join(",") + "\n";
+      c += group.label.replace(/[\[\]]/g,"") + "合計," + totalVals.join(",") + "\n\n";
 
       if (!groupTotals[group.type]) groupTotals[group.type] = {};
       months.forEach(m => { groupTotals[group.type][m] = groupMonthTotals[m]; });
-
-      c += "\n";
     });
 
-    // 損益サマリー（月ごと）
-    c += "=== 損益サマリー ===\n";
-
+    // 損益サマリー
+    const G = (type, m) => groupTotals[type]?.[m] || 0;
     const sumLine = (label, fn) => {
-      const vals = months.map(m => fn(m));
-      c += label + "," + vals.join(",") + "\n";
+      c += label + "," + months.map(m => fn(m)).join(",") + "\n";
     };
 
-    const G = (type, m) => groupTotals[type]?.[m] || 0;
-
+    c += "=== 損益サマリー ===\n";
     sumLine("売上高合計",     m => G("income",m));
     sumLine("売上原価合計",   m => G("cost",m));
     sumLine("売上総利益",     m => G("income",m) - G("cost",m));
@@ -1205,14 +1199,14 @@ JSONのみ返答（コードブロック不要）:
     sumLine("営業外費用合計", m => G("oe",m));
     sumLine("経常利益",       m => G("income",m) - G("cost",m) - G("expense",m) + G("oi",m) - G("oe",m));
 
-    // ファイル保存
     const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([bom+c], {type:"text/csv;charset=utf-8;"}));
+    a.href = URL.createObjectURL(new Blob([bom+c],{type:"text/csv;charset=utf-8;"}));
     a.download = coName + "_残高試算表（年間推移）_" + today + ".csv";
     a.click();
     URL.revokeObjectURL(a.href);
     notify("✨ 残高試算表（年間推移）をダウンロードしました！");
   }
+
 
   // ===== 月ごと一括試算表出力（JSZip不要・個別ダウンロード）=====
   async function exportTrialByMonth(journals, coName, hideZero) {
