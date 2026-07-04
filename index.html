@@ -168,6 +168,7 @@
         return {debit:r.d,debitName:accName(r.d),credit:r.c,creditName:accName(r.c),taxRate:rt,taxAmount:tax(amount,rt),confidence:0.85};
       }
     }
+    // デフォルト：経費として雑費で返す（収入の場合はAIまたはTXN_TYPEで上書きされる）
     return {debit:"6501",debitName:"雑費",credit:"1001",creditName:"現金",taxRate:rate??10,taxAmount:tax(amount,rate??10),confidence:0.5};
   }
 
@@ -215,7 +216,7 @@
     const prompt=`You are a Japanese bookkeeping assistant. Analyze this receipt/invoice image and extract accounting information.
 Available accounts: ${accList}
 Respond with ONLY a valid JSON object. No explanation, no markdown, no code blocks.
-JSON format: {"date":"YYYY-MM-DD","payee":"店名または取引先","desc":"摘要（簡潔に）","item":"品目・内容の詳細","amount":税込合計金額の整数,"taxRate":消費税率の整数（8か10か0）,"taxAmount":消費税額の整数,"debit":"借方科目コード","debitName":"借方科目名","credit":"1001","creditName":"現金","confidence":確信度0から1の小数}`;
+JSON format: {"date":"YYYY-MM-DD","payee":"店名または取引先","desc":"摘要（簡潔に）","item":"品目・内容の詳細","amount":税込合計金額の整数,"taxRate":消費税率の整数（8か10か0）,"taxAmount":消費税額の整数,"debit":"借方科目コード","debitName":"借方科目名","credit":"借方科目コード","creditName":"貸方科目名","confidence":確信度0から1の小数}`;
     const text=await callGemini([{inline_data:{mime_type:mime,data:b64}},{text:prompt}]);
     setProgress("✨ データ確認中...",85);
     let clean=text.replace(/```json\s*/gi,"").replace(/```\s*/g,"").trim();
@@ -245,6 +246,9 @@ JSON format: {"date":"YYYY-MM-DD","payee":"店名または取引先","desc":"摘
 
 重要ルール：
 - 摘要と品目・内容の両方を総合的に判断して最適な科目を選ぶこと
+- 【収入・売上の仕訳】借方=現金(1001)または普通預金(1002)、貸方=売上高(4001)
+- 【支出・経費の仕訳】借方=費用科目、貸方=現金(1001)または普通預金(1002)または未払金(2101)
+- 【振替の仕訳】借方=受取側科目、貸方=支払側科目
 - 租税公課(6401)・給与手当(6001)・役員貸付金(1301)・役員借入金(2201)・短期借入金(2301)・長期借入金(2401)は必ずtaxRate=0, taxAmount=0
 - 収入印紙・印紙・証紙・給与・給料・賞与・役員貸付・役員借入・借入返済・ローン返済は非課税
 - 食材・食品・材料は軽減税率8%の仕入高(5001)を検討すること
@@ -812,9 +816,26 @@ JSONのみ返答（コードブロック不要）:
     btn.textContent="🤖 AI自動仕訳";btn.disabled=false;
 
     // 借方科目をセット
-    const debitCode = String(r.debit||"6501");
+    let debitCode = String(r.debit||"6501");
+    let creditCode = String(r.credit||"1001");
+
+    // 収入タイプの場合：借方=現金/預金、貸方=売上高 になるよう補正
+    if(currentTxType === "income") {
+      // AIが売上高を借方に置いた場合は入れ替える
+      const CASH_BANK = ["1001","1002","1003","1004"];
+      const INCOME_CODES = ["4001","4002","4003"];
+      if(INCOME_CODES.includes(debitCode) && !INCOME_CODES.includes(creditCode)) {
+        // 借方と貸方を入れ替える
+        [debitCode, creditCode] = [creditCode, debitCode];
+      }
+      // 売上高が含まれていない場合は貸方を売上高に設定
+      if(!INCOME_CODES.includes(creditCode)) {
+        creditCode = "4001";
+      }
+    }
+
     $s("f-dr", debitCode);
-    $s("f-cr", r.credit||"1001");
+    $s("f-cr", creditCode);
 
     // 非課税科目リスト（これらは必ず消費税0%）
     const NON_TAX_CODES = ["6401","1700","1701","6001","2201","1301","2301","2401"];
