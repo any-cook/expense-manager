@@ -913,8 +913,13 @@ JSONのみ返答（コードブロック不要）:
       document.getElementById("f-tx").value = String(newTax);
     }
     document.getElementById("ai-res").style.display="block";
-    document.getElementById("ai-dr").textContent=r.debitName||"";
-    document.getElementById("ai-cr").textContent=r.creditName||"";
+    // 表示は補正後の実際のセット値（プルダウンの表示名）を使う
+    const drSel = document.getElementById("f-dr");
+    const crSel = document.getElementById("f-cr");
+    const drName = drSel.options[drSel.selectedIndex]?.text || debitCode;
+    const crName = crSel.options[crSel.selectedIndex]?.text || creditCode;
+    document.getElementById("ai-dr").textContent = drName;
+    document.getElementById("ai-cr").textContent = crName;
     document.getElementById("ai-cf").textContent=Math.round((r.confidence||0)*100)+"%";
   });
 
