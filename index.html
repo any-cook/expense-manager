@@ -279,7 +279,7 @@ JSONのみ返答（コードブロック不要）:
   function doCSV(js,fmt,coName) {
     const B="\uFEFF";let c="";
     if(fmt==="汎用") c="会社名,インボイス番号,日付,取引手段,取引先,摘要,品目・内容,借方科目,貸方科目,税込金額,消費税率,消費税額\n"
-      +js.map(j=>`${coName},${j.inv||"インボイス登録なし"},${j.date},"${j.payment||""}","${j.payee||""}","${j.desc||""}","${j.item||""}",${j.dName},${j.cName},${j.amount},${j.tRate||10}%,${j.tAmt||0}`).join("\n");
+      +js.map(j=>`${coName},${j.inv||"インボイス登録なし"},${j.date},"${j.payment||""}","${j.payee||""}","${j.desc||""}","${j.item||""}",${j.dName},${j.cName},${j.amount},${j.tRate??10}%,${j.tAmt||0}`).join("\n");
     else if(fmt==="弥生") {
       // 弥生会計 仕訳日記帳インポート形式（正式仕様）
       const yayoiHeader = "識別フラグ,伝票日付,伝票番号,借方勘定科目,借方補助科目,借方部門,借方税区分,借方金額,借方消費税額,貸方勘定科目,貸方補助科目,貸方部門,貸方税区分,貸方金額,貸方消費税額,摘要,メモ,付箋1,付箋2,調査";
@@ -304,9 +304,9 @@ JSONのみ返答（コードブロック不要）:
       c = yayoiHeader + "\n" + yayoiRows.join("\n");
     }
     else if(fmt==="freee") c="発生日,勘定科目,取引先,金額（円）,税区分,備考,インボイス番号\n"
-      +js.map(j=>`${j.date},${j.dName},"${j.payee||""}",${j.amount},課税仕入(${j.tRate||10}%),"${j.desc||""}",${j.inv||"インボイス登録なし"}`).join("\n");
+      +js.map(j=>`${j.date},${j.dName},"${j.payee||""}",${j.amount},課税仕入(${j.tRate??10}%),"${j.desc||""}",${j.inv||"インボイス登録なし"}`).join("\n");
     else if(fmt==="MF") c="取引日,借方勘定科目,借方税区分,借方金額,貸方勘定科目,貸方金額,摘要,インボイス番号\n"
-      +js.map(j=>`${j.date},${j.dName},${j.tRate||10}%,${j.amount},${j.cName},${j.amount},"${j.desc||""}",${j.inv||"インボイス登録なし"}`).join("\n");
+      +js.map(j=>`${j.date},${j.dName},${j.tRate??10}%,${j.amount},${j.cName},${j.amount},"${j.desc||""}",${j.inv||"インボイス登録なし"}`).join("\n");
     const a=document.createElement("a");
     a.href=URL.createObjectURL(new Blob([B+c],{type:"text/csv;charset=utf-8;"}));
     a.download=coName+"_経費仕訳_"+fmt+"_"+new Date().toISOString().slice(0,10)+".csv";
@@ -391,8 +391,8 @@ JSONのみ返答（コードブロック不要）:
 
   function stats() {
     const filtered = applyFilter(journals);
-    const j10=filtered.filter(j=>Number(j.tRate||10)===10);
-    const j8=filtered.filter(j=>Number(j.tRate||10)===8);
+    const j10=filtered.filter(j=>Number(j.tRate??10)===10);
+    const j8=filtered.filter(j=>Number(j.tRate??10)===8);
     const t10=j10.reduce((s,j)=>s+Number(j.amount||0),0),x10=j10.reduce((s,j)=>s+Number(j.tAmt||0),0);
     const t8=j8.reduce((s,j)=>s+Number(j.amount||0),0),x8=j8.reduce((s,j)=>s+Number(j.tAmt||0),0);
     const sales=filtered.filter(j=>getCategory(j)==="sales").reduce((s,j)=>s+Number(j.amount||0),0);
@@ -412,14 +412,22 @@ JSONのみ返答（コードブロック不要）:
     }
   }
 
+  // 現金・預金科目（これらが借方の場合は貸方科目でグループ化）
+  const CASH_CODES = new Set(["1001","1002","1003","1004"]);
+
   function renderGrouped(filtered) {
     // 科目別にグループ化
+    // 借方が現金・預金 → 貸方科目でグループ化（売上入金など）
+    // それ以外 → 借方科目でグループ化（経費など）
     const groups = {};
     filtered.forEach(j=>{
-      const key = (j.debit||"unknown")+"__"+(j.dName||"不明");
-      if(!groups[key]) groups[key]={code:j.debit||"",name:j.dName||"不明",items:[],total:0,taxTotal:0};
+      const useCr = CASH_CODES.has(j.debit||"");
+      const code = useCr ? (j.credit||"unknown") : (j.debit||"unknown");
+      const name = useCr ? (j.cName||"不明") : (j.dName||"不明");
+      const key  = code + "__" + name;
+      if(!groups[key]) groups[key]={code, name, items:[], total:0, taxTotal:0};
       groups[key].items.push(j);
-      groups[key].total += Number(j.amount||0);
+      groups[key].total    += Number(j.amount||0);
       groups[key].taxTotal += Number(j.tAmt||0);
     });
     // 科目コード順に並び替え
@@ -453,7 +461,7 @@ JSONのみ返答（コードブロック不要）:
           <td>${(j.item||"-").slice(0,12)}${(j.item||"").length>12?"…":""}</td>
           <td><span class="bd green">${j.cName||""}</span></td>
           <td class="num">¥${Number(j.amount||0).toLocaleString()}</td>
-          <td class="num"><span class="bd ${Number(j.tRate||10)===8?"orange":"purple"}">${j.tRate||10}%</span><div style="margin-top:3px">¥${Number(j.tAmt||0).toLocaleString()}</div></td>
+          <td class="num"><span class="bd ${Number(j.tRate??10)===8?"orange":"purple"}">${j.tRate??10}%</span><div style="margin-top:3px">¥${Number(j.tAmt||0).toLocaleString()}</div></td>
           <td><button class="bs copy" onclick="copyJournal('${j.id}')">複写</button><button class="bs" onclick="startEdit('${j.id}')">編集</button><button class="bs del" onclick="delJournal('${j.id}')">削除</button></td>
         </tr>`;
       });
@@ -494,7 +502,7 @@ JSONのみ返答（コードブロック不要）:
       <td><span class="bd blue">${j.dName||""}</span></td>
       <td><span class="bd green">${j.cName||""}</span></td>
       <td class="num">¥${Number(j.amount||0).toLocaleString()}</td>
-      <td class="num"><span class="bd ${Number(j.tRate||10)===8?"orange":"purple"}">${j.tRate||10}%</span><div style="margin-top:3px">¥${Number(j.tAmt||0).toLocaleString()}</div></td>
+      <td class="num"><span class="bd ${Number(j.tRate??10)===8?"orange":"purple"}">${j.tRate??10}%</span><div style="margin-top:3px">¥${Number(j.tAmt||0).toLocaleString()}</div></td>
       <td><button class="bs copy" onclick="copyJournal('${j.id}')">複写</button><button class="bs" onclick="startEdit('${j.id}')">編集</button><button class="bs del" onclick="delJournal('${j.id}')">削除</button></td>
     </tr>`).join("");
   }
@@ -571,7 +579,7 @@ JSONのみ返答（コードブロック不要）:
     $s("f-desc",j.desc||"");
     $s("f-item",j.item||"");
     $s("f-amount",j.amount||"");
-    $s("f-tr",j.tRate||10);
+    $s("f-tr",j.tRate??10);
     $s("f-tx",j.tAmt||0);
     $s("f-dr",j.debit||"");
     $s("f-cr",j.credit||"");
@@ -593,7 +601,7 @@ JSONのみ返答（コードブロック不要）:
     $s("f-payment",j.payment||"");
     if(j.txType) window.setTxnType(j.txType);
     $s("f-desc",j.desc||"");$s("f-item",j.item||"");$s("f-amount",j.amount||"");
-    $s("f-tr",j.tRate||10);$s("f-tx",j.tAmt||0);
+    $s("f-tr",j.tRate??10);$s("f-tx",j.tAmt||0);
     $s("f-dr",j.debit||"");$s("f-cr",j.credit||"");
     document.getElementById("edit-lbl").textContent="✏️ 仕訳編集中";
     document.getElementById("cancel-btn").style.display="inline-flex";
