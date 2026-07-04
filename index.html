@@ -184,6 +184,61 @@
     return "other";
   }
 
+  // ===== 過去仕訳から類似パターンを検索 =====
+  function findPastJournal(desc, item, payee, txType) {
+    if (!journals.length) return null;
+
+    // 検索テキスト（摘要＋品目＋取引先）
+    const searchText = (desc + " " + item + " " + payee).trim().toLowerCase();
+    const words = searchText.split(/\s+/).filter(w => w.length >= 2);
+
+    let bestMatch = null;
+    let bestScore = 0;
+
+    journals.forEach(j => {
+      // 同じ取引種別のみ対象
+      if (j.txType && j.txType !== txType) return;
+      // 科目コードがないものはスキップ
+      if (!j.debit || !j.credit) return;
+
+      const jText = (
+        (j.desc||"") + " " + (j.item||"") + " " + (j.payee||"")
+      ).toLowerCase();
+
+      // スコア計算（一致する単語数）
+      let score = 0;
+
+      // 取引先完全一致は高スコア
+      if (payee && j.payee && j.payee === payee) score += 10;
+
+      // 摘要・品目のキーワード一致
+      words.forEach(w => {
+        if (jText.includes(w)) score += 2;
+      });
+
+      // 借方科目が同じならボーナス
+      if (bestMatch && j.debit === bestMatch.debit) score += 1;
+
+      if (score > bestScore && score >= 4) {
+        bestScore = score;
+        bestMatch = j;
+      }
+    });
+
+    if (!bestMatch) return null;
+
+    return {
+      debit:      bestMatch.debit,
+      debitName:  bestMatch.dName  || accName(bestMatch.debit),
+      credit:     bestMatch.credit,
+      creditName: bestMatch.cName  || accName(bestMatch.credit),
+      taxRate:    bestMatch.tRate  ?? 10,
+      taxAmount:  tax(0, bestMatch.tRate ?? 10),
+      confidence: Math.min(0.5 + bestScore * 0.05, 0.95),
+      fromHistory: true,
+    };
+  }
+
   function localJ(desc, amount, rate, item="", txType="expense") {
     // 摘要と品目・内容を結合して判定テキストを作成
     const text = (desc + " " + item).trim();
@@ -257,11 +312,28 @@ JSON format: {"date":"YYYY-MM-DD","payee":"店名または取引先","desc":"摘
 
   // ===== AI自動仕訳 =====
   async function aiJournal(desc,item,payee,amount,rate,txType="expense") {
-    if(!checkKey()) return localJ(desc,amount,rate,item,txType);
+    // ① まず過去仕訳から類似パターンを検索
+    const past = findPastJournal(desc, item, payee, txType);
+
+    // ② APIキーがない場合：過去仕訳 → ローカルルール の順で判定
+    if(!checkKey()) {
+      if(past) {
+        notify("📚 過去の登録データから仕訳を自動設定しました","info");
+        return {...past, taxAmount: tax(amount, past.taxRate??10)};
+      }
+      return localJ(desc,amount,rate,item,txType);
+    }
     try{
       // 摘要と品目を結合して判定テキストを作成
       const judgeText = [desc, item].filter(Boolean).join(" / ");
       const txTypeLabel = txType==="income"?"収入（売上）":txType==="expense"?"支出（経費）":"振替";
+
+      // 過去仕訳の参考情報を構築
+      const pastRef = findPastJournal(desc, item, payee, txType);
+      const pastHint = pastRef
+        ? `【過去の類似仕訳（参考）】借方:${pastRef.debitName}(${pastRef.debit}) / 貸方:${pastRef.creditName}(${pastRef.credit}) / 確信度:${Math.round(pastRef.confidence*100)}%`
+        : "";
+
       const prompt=`あなたは日本の会計専門家です。以下の経費情報から最適な勘定科目を判断し、JSONのみで回答してください。
 
 【摘要】${desc}
@@ -271,6 +343,7 @@ JSON format: {"date":"YYYY-MM-DD","payee":"店名または取引先","desc":"摘
 【消費税率】${rate}%
 【取引種別】${txTypeLabel}
 【判定テキスト（摘要＋品目）】${judgeText}
+${pastHint}
 
 利用可能な勘定科目: ${ACCS.map(a=>a.c+":"+a.n).join(", ")}
 
@@ -925,7 +998,10 @@ JSONのみ返答（コードブロック不要）:
     const crName = crSel.options[crSel.selectedIndex]?.text || creditCode;
     document.getElementById("ai-dr").textContent = drName;
     document.getElementById("ai-cr").textContent = crName;
-    document.getElementById("ai-cf").textContent=Math.round((r.confidence||0)*100)+"%";
+    document.getElementById("ai-cf").textContent = Math.round((r.confidence||0)*100)+"%";
+    // 過去仕訳参照の場合はバッジ表示
+    const histBadge = document.getElementById("ai-hist-badge");
+    if(histBadge) histBadge.style.display = r.fromHistory ? "inline-block" : "none";
   });
 
   // 登録
@@ -1626,7 +1702,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:rgba(74,143,255,.06)}
         </div>
         <button type="button" id="ai-btn" class="btn btn-ai">🤖 AI自動仕訳（摘要・金額入力後クリック）</button>
         <div class="ai-result" id="ai-res" style="display:none">
-          <div class="ai-label">🎯 AI判定結果（確信度: <span id="ai-cf"></span>）</div>
+          <div class="ai-label">🎯 AI判定結果（確信度: <span id="ai-cf"></span>）<span id="ai-hist-badge" style="display:none;background:rgba(255,214,68,.2);color:#ffd32a;font-size:11px;font-weight:800;padding:2px 8px;border-radius:6px;margin-left:8px">📚 過去データ参照</span></div>
           <div class="ai-val">借方: <strong id="ai-dr"></strong> → 貸方: <strong id="ai-cr"></strong></div>
           <div style="font-size:12px;color:#9bbde0;margin-top:8px">下のプルダウンで手動変更できます ✏️</div>
         </div>
