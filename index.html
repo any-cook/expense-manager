@@ -999,6 +999,247 @@ JSONのみ返答（コードブロック不要）:
     URL.revokeObjectURL(a.href);
   }
 
+  // ===== 試算表CSV文字列生成（単月）=====
+  function buildTrialCSV(journals, coName, targetMonth, hideZero) {
+    const bom = "\uFEFF";
+    const filtered = targetMonth
+      ? journals.filter(j=>(j.date||"").startsWith(targetMonth))
+      : journals;
+
+    const acc = {};
+    const initAcc = (code, name) => {
+      if (!acc[code]) acc[code] = {code, name, debit:0, credit:0};
+    };
+    filtered.forEach(j => {
+      if (j.debit  && j.dName) { initAcc(j.debit,  j.dName);  acc[j.debit].debit   += Number(j.amount||0); }
+      if (j.credit && j.cName) { initAcc(j.credit, j.cName);  acc[j.credit].credit += Number(j.amount||0); }
+    });
+
+    const PL_STRUCTURE = [
+      { group:"売上高",     codes:["4"], type:"income"        },
+      { group:"売上原価",   codes:["5"], type:"cost"          },
+      { group:"販売管理費", codes:["6","2201","1301"], type:"expense" },
+      { group:"営業外収益", codes:["4002","4003"],     type:"other_income"   },
+      { group:"営業外費用", codes:["6601","6602"],     type:"other_expense"  },
+    ];
+
+    const period = targetMonth || "全期間";
+    const today  = new Date().toISOString().slice(0,10);
+    let c = "事業所名：" + coName + "\n";
+    c += "集計期間：" + period + "\n";
+    c += "出力日：" + today + "\n\n";
+    c += "グループ,科目コード,科目名,借方合計,貸方合計,残高\n";
+
+    let totalSales=0, totalCost=0, totalExpense=0, totalOI=0, totalOE=0;
+
+    PL_STRUCTURE.forEach(group => {
+      const rows = Object.values(acc).filter(a => {
+        if(group.type==="income")        return a.code.startsWith("4") && !["4002","4003"].includes(a.code);
+        if(group.type==="cost")          return a.code.startsWith("5");
+        if(group.type==="expense")       return (a.code.startsWith("6") && !["6601","6602"].includes(a.code)) || ["2201","1301"].includes(a.code);
+        if(group.type==="other_income")  return ["4002","4003"].includes(a.code);
+        if(group.type==="other_expense") return ["6601","6602"].includes(a.code);
+        return false;
+      }).sort((a,b)=>a.code.localeCompare(b.code));
+
+      const visRows = hideZero ? rows.filter(r=>r.debit>0||r.credit>0) : rows;
+      if(!visRows.length && hideZero) return;
+
+      c += "[" + group.group + "],,,,,\n";
+      visRows.forEach(r => {
+        const bal = r.debit - r.credit;
+        c += "," + r.code + "," + r.name + "," + r.debit + "," + r.credit + "," + bal + "\n";
+      });
+
+      const gd = visRows.reduce((s,r)=>s+r.debit,0);
+      const gc = visRows.reduce((s,r)=>s+r.credit,0);
+      c += group.group + "合計,,," + gd + "," + gc + "," + (gd-gc) + "\n\n";
+
+      if(group.type==="income")       totalSales    += gc - gd;
+      if(group.type==="cost")         totalCost     += gd - gc;
+      if(group.type==="expense")      totalExpense  += gd - gc;
+      if(group.type==="other_income") totalOI       += gc - gd;
+      if(group.type==="other_expense")totalOE       += gd - gc;
+    });
+
+    const gross = totalSales - totalCost;
+    const oper  = gross - totalExpense;
+    const ord   = oper + totalOI - totalOE;
+
+    c += "\n=== 損益サマリー ===\n";
+    c += "売上高合計,,," + totalSales + "\n";
+    c += "売上原価合計,,," + totalCost + "\n";
+    c += "売上総利益,,," + gross + "\n";
+    c += "販売管理費合計,,," + totalExpense + "\n";
+    c += "営業利益,,," + oper + "\n";
+    c += "営業外収益合計,,," + totalOI + "\n";
+    c += "営業外費用合計,,," + totalOE + "\n";
+    c += "経常利益,,," + ord + "\n";
+
+    return bom + c;
+  }
+
+  // ===== 残高試算表（年間推移）形式出力 =====
+  function exportTrialYearly(journals, coName, hideZero) {
+    const bom = "\uFEFF";
+    const today = new Date().toISOString().slice(0,10);
+
+    // 使われている月を取得（ソート済み）
+    const months = [...new Set(
+      journals.map(j=>(j.date||"").slice(0,7)).filter(m=>m.length===7)
+    )].sort();
+
+    if (!months.length) { notify("データがありません","error"); return; }
+
+    // 月ごとに科目別集計
+    const monthData = {}; // { "2025-09": { "6001": {debit:0, credit:0, name:""}, ... } }
+    months.forEach(m => { monthData[m] = {}; });
+
+    journals.forEach(j => {
+      const m = (j.date||"").slice(0,7);
+      if (!monthData[m]) return;
+
+      const addAcc = (code, name, debit, credit) => {
+        if (!code) return;
+        if (!monthData[m][code]) monthData[m][code] = {name, debit:0, credit:0};
+        monthData[m][code].debit  += debit;
+        monthData[m][code].credit += credit;
+      };
+      addAcc(j.debit,  j.dName, Number(j.amount||0), 0);
+      addAcc(j.credit, j.cName, 0, Number(j.amount||0));
+    });
+
+    // 全月で使われている科目コードをまとめる
+    const allCodes = new Set();
+    Object.values(monthData).forEach(mData => Object.keys(mData).forEach(c => allCodes.add(c)));
+
+    // 科目名マップ
+    const codeNames = {};
+    journals.forEach(j => {
+      if (j.debit  && j.dName) codeNames[j.debit]  = j.dName;
+      if (j.credit && j.cName) codeNames[j.credit] = j.cName;
+    });
+
+    // 損益計算書の科目グループ定義
+    const PL_GROUPS = [
+      { label:"[売上高]",     filter: c => c.startsWith("4") && !["4002","4003"].includes(c), type:"income"  },
+      { label:"[売上原価]",   filter: c => c.startsWith("5"), type:"cost"     },
+      { label:"[販売管理費]", filter: c => (c.startsWith("6") && !["6601","6602"].includes(c)) || ["2201","1301"].includes(c), type:"expense" },
+      { label:"[営業外収益]", filter: c => ["4002","4003"].includes(c), type:"oi" },
+      { label:"[営業外費用]", filter: c => ["6601","6602"].includes(c), type:"oe" },
+    ];
+
+    // ヘッダー行：勘定科目 | 4月度 | 5月度 | ...
+    const monthLabels = months.map(m => {
+      const [y, mo] = m.split("-");
+      return mo + "月度";
+    });
+
+    let c = "残高試算表（年間推移）\n";
+    c += "事業所名：" + coName + "\n";
+    c += "出力日：" + today + "\n\n";
+
+    // ヘッダー
+    c += "勘定科目," + monthLabels.join(",") + "\n";
+
+    // グループ別に出力
+    const groupTotals = {}; // type -> { month -> amount }
+
+    PL_GROUPS.forEach(group => {
+      // グループ内の科目を取得
+      const codes = [...allCodes].filter(group.filter).sort();
+      if (!codes.length) return;
+
+      // グループ行
+      c += group.label + "," + months.map(()=>"").join(",") + "\n";
+
+      let groupMonthTotals = {};
+      months.forEach(m => { groupMonthTotals[m] = 0; });
+
+      codes.forEach(code => {
+        const name = codeNames[code] || code;
+        // 月ごとの残高を計算
+        const vals = months.map(m => {
+          const d = monthData[m][code];
+          if (!d) return 0;
+          // 費用・資産：借方残高、収益・負債：貸方残高
+          const isExpense = group.type === "expense" || group.type === "cost";
+          const isIncome  = group.type === "income"  || group.type === "oi";
+          if (isExpense) return d.debit - d.credit;
+          if (isIncome)  return d.credit - d.debit;
+          return d.debit - d.credit;
+        });
+
+        // hideZeroが有効の場合、全月0ならスキップ
+        if (hideZero && vals.every(v => v === 0)) return;
+
+        vals.forEach((v, i) => { groupMonthTotals[months[i]] += v; });
+        c += name + "," + vals.join(",") + "\n";
+      });
+
+      // グループ合計行
+      const totalVals = months.map(m => groupMonthTotals[m]);
+      c += group.label.replace(/[\[\]]/g,"") + "合計," + totalVals.join(",") + "\n";
+
+      if (!groupTotals[group.type]) groupTotals[group.type] = {};
+      months.forEach(m => { groupTotals[group.type][m] = groupMonthTotals[m]; });
+
+      c += "\n";
+    });
+
+    // 損益サマリー（月ごと）
+    c += "=== 損益サマリー ===\n";
+
+    const sumLine = (label, fn) => {
+      const vals = months.map(m => fn(m));
+      c += label + "," + vals.join(",") + "\n";
+    };
+
+    const G = (type, m) => groupTotals[type]?.[m] || 0;
+
+    sumLine("売上高合計",     m => G("income",m));
+    sumLine("売上原価合計",   m => G("cost",m));
+    sumLine("売上総利益",     m => G("income",m) - G("cost",m));
+    sumLine("販売管理費合計", m => G("expense",m));
+    sumLine("営業利益",       m => G("income",m) - G("cost",m) - G("expense",m));
+    sumLine("営業外収益合計", m => G("oi",m));
+    sumLine("営業外費用合計", m => G("oe",m));
+    sumLine("経常利益",       m => G("income",m) - G("cost",m) - G("expense",m) + G("oi",m) - G("oe",m));
+
+    // ファイル保存
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([bom+c], {type:"text/csv;charset=utf-8;"}));
+    a.download = coName + "_残高試算表（年間推移）_" + today + ".csv";
+    a.click();
+    URL.revokeObjectURL(a.href);
+    notify("✨ 残高試算表（年間推移）をダウンロードしました！");
+  }
+
+  // ===== 月ごと一括試算表出力（JSZip不要・個別ダウンロード）=====
+  async function exportTrialByMonth(journals, coName, hideZero) {
+    // 使われている月を取得
+    const months = [...new Set(
+      journals.map(j=>(j.date||"").slice(0,7)).filter(m=>m.length===7)
+    )].sort();
+
+    if (!months.length) { notify("データがありません","error"); return; }
+
+    notify("⏳ " + months.length + "ヶ月分を順次ダウンロードします...","info");
+
+    for (let i = 0; i < months.length; i++) {
+      const m = months[i];
+      const csv = buildTrialCSV(journals, coName, m, hideZero);
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([csv], {type:"text/csv;charset=utf-8;"}));
+      a.download = coName + "_試算表_" + m + ".csv";
+      a.click();
+      URL.revokeObjectURL(a.href);
+      // 少し間隔を空ける（ブラウザのダウンロード連続防止）
+      await new Promise(r=>setTimeout(r, 500));
+    }
+    notify("✨ " + months.length + "ヶ月分の試算表をダウンロードしました！");
+  }
+
   // ===== タブボタン・CSVエクスポートのイベントリスナー =====
   document.querySelectorAll(".tab-btn").forEach(b=>b.addEventListener("click",()=>tabSwitch(b.dataset.tab)));
 
@@ -1014,8 +1255,27 @@ JSONのみ返答（コードブロック不要）:
     const co=COMPANIES.find(c=>c.id===currentCompany);
     const month=$v("trial-month");
     const hideZero=document.getElementById("trial-hide-zero")?.checked||false;
-    exportTrialBalance(journals, co?.name||currentCompany, month, hideZero);
+    const csv = buildTrialCSV(journals, co?.name||currentCompany, month, hideZero);
+    const period = month || "全期間";
+    const a=document.createElement("a");
+    a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8;"}));
+    a.download=(co?.name||currentCompany)+"_試算表_"+period+"_"+new Date().toISOString().slice(0,10)+".csv";
+    a.click();URL.revokeObjectURL(a.href);
     notify("試算表をダウンロードしました ✨");
+  });
+
+  document.getElementById("trial-monthly-btn").addEventListener("click",async()=>{
+    if(!journals.length){notify("データがありません","error");return;}
+    const co=COMPANIES.find(c=>c.id===currentCompany);
+    const hideZero=document.getElementById("trial-hide-zero")?.checked||false;
+    await exportTrialByMonth(journals, co?.name||currentCompany, hideZero);
+  });
+
+  document.getElementById("trial-yearly-btn").addEventListener("click",()=>{
+    if(!journals.length){notify("データがありません","error");return;}
+    const co=COMPANIES.find(c=>c.id===currentCompany);
+    const hideZero=document.getElementById("trial-hide-zero")?.checked||false;
+    exportTrialYearly(journals, co?.name||currentCompany, hideZero);
   });
 
   // 初期化
@@ -1430,9 +1690,20 @@ tr:last-child td{border-bottom:none}tr:hover td{background:rgba(74,143,255,.06)}
           </label>
         </div>
       </div>
-      <button id="trial-btn" class="btn" style="background:linear-gradient(135deg,#a55eea,#7c4dff);color:#fff;padding:14px 0;font-size:15px">
-        📊 試算表をダウンロード
-      </button>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:4px">
+        <button id="trial-btn" class="btn" style="background:linear-gradient(135deg,#a55eea,#7c4dff);color:#fff;padding:12px 0;font-size:14px">
+          📊 指定月 or 全期間
+        </button>
+        <button id="trial-monthly-btn" class="btn" style="background:linear-gradient(135deg,#fd9644,#e55039);color:#fff;padding:12px 0;font-size:14px">
+          📅 月ごとに一括出力
+        </button>
+        <button id="trial-yearly-btn" class="btn" style="background:linear-gradient(135deg,#26de81,#20bf6b);color:#fff;padding:12px 0;font-size:14px">
+          📈 年間推移（1枚）
+        </button>
+      </div>
+      <div style="font-size:12px;color:#9bbde0;margin-top:10px;line-height:1.7">
+        📈 <strong style="color:#26de81">年間推移（1枚）</strong>：月ごとの科目金額が横に並ぶ1枚のCSV（添付の残高試算表形式）
+      </div>
     </div>
 
   </div>
