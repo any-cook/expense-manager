@@ -1165,10 +1165,19 @@ JSONのみ返答（コードブロック不要）:
         const vals = months.map(m => {
           const d = monthData[m][code];
           if (!d) return 0;
-          // 収益科目（売上高等）：貸方－借方
-          // 費用科目（経費等）：借方－貸方
+          // 収益科目（売上高等）：借方・貸方どちらに記録されていても合計を正値で表示
+          // debit側に記録 → そのままの借方金額
+          // credit側に記録 → 貸方金額をプラスで表示
           const isIncome = (group.type === "income" || group.type === "oi");
-          return isIncome ? (d.credit - d.debit) : (d.debit - d.credit);
+          if (isIncome) {
+            // 借方に売上高がある場合（入力時に借方=売上高で登録）→ 借方金額
+            // 貸方に売上高がある場合（通常仕訳）→ 貸方金額
+            // どちらも合算してプラスで表示
+            return d.debit + d.credit;
+          } else {
+            // 費用・原価：借方－貸方（通常は借方に費用）
+            return d.debit - d.credit;
+          }
         });
 
         if (hideZero && vals.every(v => v === 0)) return;
