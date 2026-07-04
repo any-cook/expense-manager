@@ -176,11 +176,25 @@
 
   // 分類判定（取引区分が設定されていればそちらを優先）
   function getCategory(j) {
+    // txTypeが保存されている場合はそれを優先
     if(j.txType==="income")   return "sales";
     if(j.txType==="expense")  return "expense";
     if(j.txType==="transfer") return "transfer";
-    if(SALES_CODES.has(j.debit||""))   return "sales";
-    if(EXPENSE_CODES.has(j.debit||"")) return "expense";
+
+    // txTypeがない古いデータは借方・貸方のコードで判定
+    const dr = j.debit  || "";
+    const cr = j.credit || "";
+
+    // 売上高(4001)が借方または貸方にあれば売上
+    if(SALES_CODES.has(dr) || SALES_CODES.has(cr)) return "sales";
+
+    // 費用科目が借方にあれば経費
+    if(EXPENSE_CODES.has(dr)) return "expense";
+
+    // 現金・預金が借方で売上高が貸方のパターンも売上
+    const CASH_CODES = new Set(["1001","1002","1003","1004"]);
+    if(CASH_CODES.has(dr) && SALES_CODES.has(cr)) return "sales";
+
     return "other";
   }
 
