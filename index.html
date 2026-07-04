@@ -948,7 +948,9 @@ JSONのみ返答（コードブロック不要）:
         if (!a) return;
         const debit  = a.debit;
         const credit = a.credit;
-        const bal    = debit - credit;
+        // 収益科目は貸方残高（credit-debit）、費用・資産科目は借方残高（debit-credit）
+        const isIncomeSide = (group.type==="income" || group.type==="other_income");
+        const bal = isIncomeSide ? (credit - debit) : (debit - credit);
         if (hideZero && debit === 0 && credit === 0) return;
         groupRows.push({ code, name:a.name, debit, credit, bal });
         groupDebit  += debit;
@@ -1162,12 +1164,9 @@ JSONのみ返答（コードブロック不要）:
         const vals = months.map(m => {
           const d = monthData[m][code];
           if (!d) return 0;
-          // 費用・資産：借方残高、収益・負債：貸方残高
-          const isExpense = group.type === "expense" || group.type === "cost";
-          const isIncome  = group.type === "income"  || group.type === "oi";
-          if (isExpense) return d.debit - d.credit;
-          if (isIncome)  return d.credit - d.debit;
-          return d.debit - d.credit;
+          // 収益科目は貸方残高（credit-debit）、費用・資産科目は借方残高（debit-credit）
+          const isIncomeSide = group.type === "income" || group.type === "oi";
+          return isIncomeSide ? (d.credit - d.debit) : (d.debit - d.credit);
         });
 
         // hideZeroが有効の場合、全月0ならスキップ
