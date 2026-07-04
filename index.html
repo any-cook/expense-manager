@@ -434,7 +434,7 @@ JSONのみ返答（コードブロック不要）:
   function highlight(text, q) {
     if (!q || !text) return text||"";
     const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    return String(text).replace(new RegExp("("+escaped+")", "gi"), '<mark style="background:rgba(255,214,68,.4);color:#ffd32a;border-radius:3px;padding:0 2px">$1</mark>');
+    return String(text).replace(new RegExp('('+escaped+')', 'gi'), '<mark style="background:rgba(255,214,68,.4);color:#ffd32a;border-radius:3px;padding:0 2px">$1</mark>');
   }
 
   function renderGrouped(filtered) {
@@ -540,6 +540,7 @@ JSONのみ返答（コードブロック不要）:
   function renderList() {
     const tb=document.getElementById("tbody");
     const filtered=applyFilter(journals);
+    const q2=searchText.trim().toLowerCase();
     if(!filtered.length){tb.innerHTML='<tr><td colspan="10" style="text-align:center;color:#aaa;padding:50px;font-size:16px">📭 データがありません</td></tr>';return;}
 
     // 科目別グループ表示
