@@ -259,7 +259,8 @@ JSONのみ返答（コードブロック不要）:
       const parsed = JSON.parse(m[0]);
       // 非課税科目なら戻り値も強制0
       const dc = String(parsed.debit||"");
-      if(NON_TAX_SET.has(dc) || (parsed.debitName||"").includes("租税") || (parsed.debitName||"").includes("公課")) {
+      const NON_TAX_NAME_CHECK = ["租税","公課","給与","給料","賞与","役員","借入","返済"];
+      if(NON_TAX_SET.has(dc) || NON_TAX_NAME_CHECK.some(w=>(parsed.debitName||"").includes(w))) {
         parsed.taxRate = 0;
         parsed.taxAmount = 0;
       }
@@ -621,7 +622,8 @@ JSONのみ返答（コードブロック不要）:
     const NON_CHECK=["租税","公課","給与","給料","賞与","役員貸付","役員借入"];
     if(NON_TAX_SET.has(dc)||NON_CHECK.some(w=>accN.includes(w))){
       $s("f-tr",0);$s("f-tx",0);
-      const lbl=dc==="6401"?"租税公課（収入印紙・証紙など）":dc==="6001"?"給与手当":dc==="1301"?"役員貸付金":dc==="2201"?"役員借入金":dc==="2301"?"短期借入金（返済）":dc==="2401"?"長期借入金（返済）":"この科目";
+      const NON_TAX_LBLS = {"6401":"租税公課（収入印紙・証紙など）","6001":"給与手当","2201":"役員借入金","1301":"役員貸付金","2301":"短期借入金（返済）","2401":"長期借入金（返済）"};
+      const lbl = NON_TAX_LBLS[dc] || "この科目";
       notify("💡 "+lbl+"は非課税（0%）に自動設定しました","info");
     }
   });
@@ -701,7 +703,7 @@ JSONのみ返答（コードブロック不要）:
     $s("f-cr", r.credit||"1001");
 
     // 非課税科目リスト（これらは必ず消費税0%）
-    const NON_TAX_CODES = ["6401","1700","1701"];
+    const NON_TAX_CODES = ["6401","1700","1701","6001","2201","1301","2301","2401"];
     const NON_TAX_NAMES = ["租税","公課","印紙","証紙","非課税","給与","給料","賞与","役員貸付","役員借入","返済金","借入返済","ローン返済"];
     const judgeText2 = (desc+" "+item).trim();
     const isNonTax = NON_TAX_CODES.includes(debitCode)
