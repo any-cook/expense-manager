@@ -1719,19 +1719,22 @@ tr:last-child td{border-bottom:none}tr:hover td{background:rgba(74,143,255,.06)}
 
 <!-- ===== メインアプリ ===== -->
 <div id="main-app">
-  <header id="header-bar">
-    <div>
-      <div class="logo">📒 経費管理システム</div>
-      <div class="logo-sub">✨ AI自動仕訳 ・ レシート読み取り ・ インボイス対応</div>
-      <div id="company-name-disp"></div>
-      <div id="api-status" style="font-size:12px;margin-top:3px;font-weight:800"></div>
+  <header id="header-bar" style="flex-direction:column;align-items:stretch;gap:6px">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <div class="logo">📒 経費管理システム</div>
+        <div class="logo-sub">✨ AI自動仕訳 ・ レシート読み取り ・ インボイス対応</div>
+        <div id="company-name-disp"></div>
+        <div id="api-status" style="font-size:12px;margin-top:3px;font-weight:800"></div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px">
+        <button onclick="closeFiscalYear()" title="決算確定" style="padding:8px 14px;border:none;border-radius:10px;background:rgba(255,107,107,.15);color:#ff6b6b;font-size:12px;font-weight:800;cursor:pointer;font-family:&quot;M PLUS Rounded 1c&quot;,sans-serif">🔒 決算確定</button>
+        <button class="change-co" id="change-co-btn">🏢 会社を切り替える</button>
+        <div style="font-size:11px;color:#7eb8ff;font-family:monospace"><span id="api-key-disp"></span></div>
+      </div>
     </div>
-    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px">
-      <div id="fy-selector" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"></div>
-      <button onclick="closeFiscalYear()" title="決算確定" style="padding:8px 14px;border:none;border-radius:10px;background:rgba(255,107,107,.15);color:#ff6b6b;font-size:12px;font-weight:800;cursor:pointer;font-family:&quot;M PLUS Rounded 1c&quot;,sans-serif">🔒 決算確定</button>
-      <button class="change-co" id="change-co-btn">🏢 会社を切り替える</button>
-      <div style="font-size:11px;color:#7eb8ff;font-family:monospace"><span id="api-key-disp"></span></div>
-    </div>
+    <!-- 期切替ボタン（幅全体を使って表示）-->
+    <div id="fy-selector" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:4px 0;border-top:1px solid rgba(74,143,255,.15)"></div>
   </header>
 
   <div class="api-banner" id="api-banner" style="display:none">
