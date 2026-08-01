@@ -456,10 +456,13 @@ JSONのみ返答（コードブロック不要）:
       const snap=await getDocs(query(journalCol(),orderBy("createdAt","desc")));
       // 全件を保持してfyでフィルタリング
       const allJournals=snap.docs.map(d=>({id:d.id,...d.data()}));
-      if(currentFY === "") {
+      // DOMのactiveボタンからfyを取得（確実に最新値を使う）
+      const activeFYBtn = document.querySelector("#fy-selector .fy-btn.active");
+      const activeFY = activeFYBtn ? (activeFYBtn.dataset.fyVal||"") : currentFY;
+      if(activeFY === "") {
         journals = allJournals.filter(j=>!j.fy || j.fy==="current");
       } else {
-        journals = allJournals.filter(j=>j.fy===currentFY);
+        journals = allJournals.filter(j=>j.fy===activeFY);
       }
       if(journals.length) notify("✨ 読込完了（"+journals.length+"件）");
     }catch{
