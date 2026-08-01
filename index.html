@@ -1465,13 +1465,14 @@ JSONのみ返答（コードブロック不要）:
     }
   };
 
-    window.switchFY = function(fy) {
+    window.switchFY = async function(fy) {
     currentFY = fy;
     // fy選択肢のハイライト更新
     document.querySelectorAll(".fy-btn").forEach(b=>{
       b.classList.toggle("active", (b.dataset.fyVal||"") === fy);
     });
-    renderList(); stats();
+    // データを再読み込み（fyフィルターを適用して取得）
+    await load();
     notify((fy === "" ? "当期" : fy) + "のデータを表示しています","info");
   };
 
@@ -1734,7 +1735,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:rgba(74,143,255,.06)}
       </div>
     </div>
     <!-- 期切替ボタン（幅全体を使って表示）-->
-    <div id="fy-selector" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:4px 0;border-top:1px solid rgba(74,143,255,.15)"></div>
+    <div id="fy-selector" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:6px 0;min-height:38px"></div>
   </header>
 
   <div class="api-banner" id="api-banner" style="display:none">
