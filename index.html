@@ -468,6 +468,8 @@ JSONのみ返答（コードブロック不要）:
       if(journals.length) notify("ローカルデータを使用","info");
     }
     renderList();stats();
+    // 期切替ボタンを更新
+    updateFYSelector();
   }
 
   async function saveJ(j) {
@@ -1477,32 +1479,43 @@ JSONのみ返答（コードブロック不要）:
   async function updateFYSelector() {
     const container = document.getElementById("fy-selector");
     if(!container || !currentCompany) return;
-    // modular SDKでFirestoreから期一覧を取得
-    const colRef = collection(db,"companies",currentCompany,"journals");
-    const snap = await getDocs(colRef);
-    const fys = new Set();
-    snap.docs.forEach(d => {
-      const fy = d.data().fy;
-      if(fy && fy !== "current") fys.add(fy);
-    });
-    const fyList = [...fys].sort().reverse();
-    container.innerHTML = "";
-    // 当期ボタン
-    const curBtn = document.createElement("button");
-    curBtn.className = "fy-btn" + (currentFY==="" ? " active" : "");
-    curBtn.dataset.fyVal = "";
-    curBtn.textContent = "📅 当期";
-    curBtn.onclick = function(){ window.switchFY(""); };
-    container.appendChild(curBtn);
-    // 前期以前
-    fyList.forEach(function(fy){
-      const btn = document.createElement("button");
-      btn.className = "fy-btn" + (currentFY===fy ? " active" : "");
-      btn.dataset.fyVal = fy;
-      btn.textContent = "📁 " + fy;
-      btn.onclick = function(){ window.switchFY(fy); };
-      container.appendChild(btn);
-    });
+
+    // Firestoreから全件取得して期一覧を作成（allJournalsを使用）
+    try {
+      const colRef = collection(db,"companies",currentCompany,"journals");
+      const snap = await getDocs(colRef);
+      const fys = new Set();
+      snap.docs.forEach(d => {
+        const fy = d.data().fy;
+        // "current" 以外の期名を収集（nullやundefinedも除外）
+        if(fy && fy !== "current") fys.add(fy);
+      });
+      const fyList = [...fys].sort().reverse();
+
+      container.innerHTML = "";
+
+      // 前期以前のボタン（あれば）
+      if(fyList.length > 0) {
+        // 当期ボタン
+        const curBtn = document.createElement("button");
+        curBtn.className = "fy-btn" + (currentFY==="" ? " active" : "");
+        curBtn.dataset.fyVal = "";
+        curBtn.textContent = "📅 当期";
+        curBtn.onclick = function(){ window.switchFY(""); };
+        container.appendChild(curBtn);
+
+        fyList.forEach(function(fy){
+          const btn = document.createElement("button");
+          btn.className = "fy-btn" + (currentFY===fy ? " active" : "");
+          btn.dataset.fyVal = fy;
+          btn.textContent = "📁 " + fy;
+          btn.onclick = function(){ window.switchFY(fy); };
+          container.appendChild(btn);
+        });
+      }
+    } catch(e) {
+      console.error("updateFYSelector error:", e);
+    }
   }
 
   // ===== タブボタン・CSVエクスポートのイベントリスナー =====
