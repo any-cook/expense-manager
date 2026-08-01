@@ -57,7 +57,9 @@
     document.getElementById("company-screen").style.display = "none";
     document.getElementById("main-app").style.display = "block";
     // データ再読み込み
+    currentFY = "";
     load();
+    setTimeout(updateFYSelector, 2000);
   }
 
   function showCompanyScreen() {
@@ -438,6 +440,7 @@ JSONのみ返答（コードブロック不要）:
   // ===== Firebase =====
   let journals=[],editId=null;
   let filterMonth="", filterCat="all"; // 月別・分類フィルター
+  let currentFY = ""; // 現在表示中の期（空=当期）
   let searchText=""; // フリーワード検索
   let sortMode="date_desc"; // ソート順：date_desc=日付新しい順（デフォルト）
   let viewMode="list"; // 表示モード：list=通常一覧、group=科目別グループ
@@ -451,7 +454,15 @@ JSONのみ返答（コードブロック不要）:
     if(!currentCompany) return;
     try{
       const snap=await getDocs(query(journalCol(),orderBy("createdAt","desc")));
-      journals=snap.docs.map(d=>({id:d.id,...d.data()}));
+      const allJournals=snap.docs.map(d=>({id:d.id,...d.data()}));
+      // 期フィルター
+      if(currentFY === "") {
+        // 当期：fy="current" または fyなし
+        journals = allJournals.filter(j=>!j.fy || j.fy==="current");
+      } else {
+        // 前期等：指定したfyのみ
+        journals = allJournals.filter(j=>j.fy===currentFY);
+      }
       if(journals.length) notify("✨ 読込完了（"+journals.length+"件）");
     }catch{
       const key="keihi_j_"+currentCompany;
@@ -1024,7 +1035,7 @@ JSONのみ返答（コードブロック不要）:
     e.preventDefault();
     const dc=$v("f-dr"),cc=$v("f-cr"),tr=parseInt($v("f-tr"))||10,amt=parseInt($v("f-amount"))||0;
     const j={
-      id:editId||null,txType:currentTxType,inv:$v("f-inv")?"T"+$v("f-inv").replace(/^T/,""):"インボイス登録なし",date:$v("f-date"),payment:$v("f-payment")||"",
+      id:editId||null,txType:currentTxType,fy:currentFY||"current",inv:$v("f-inv")?"T"+$v("f-inv").replace(/^T/,""):"インボイス登録なし",date:$v("f-date"),payment:$v("f-payment")||"",
       payee:$v("f-payee").trim(),desc:$v("f-desc").trim(),item:$v("f-item").trim(),
       amount:amt,tRate:tr,tAmt:parseInt($v("f-tx"))||tax(amt,tr),
       debit:dc,dName:accName(dc),credit:cc,cName:accName(cc),
@@ -1418,6 +1429,103 @@ JSONのみ返答（コードブロック不要）:
     notify("✨ " + months.length + "ヶ月分の試算表をダウンロードしました！");
   }
 
+  // ===== 決算更新・期切替機能 =====
+
+  // 利用可能な期一覧を取得
+  async function getFYList() {
+    const { getFirestore, collection, getDocs } = await import("https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js").catch(()=>({getFirestore:null}));
+    // compat SDKを使用
+    const fys = new Set(journals.map(j=>j.fy||"current"));
+    return [...fys].sort();
+  }
+
+  // 決算更新（当期→前期に移行）
+  window.closeFiscalYear = async function() {
+    if(!journals.length){notify("データがありません","error");return;}
+
+    const co = COMPANIES.find(c=>c.id===currentCompany);
+    const coName = co?.name||currentCompany;
+
+    // 現在の期名を決定（例：2026年3月期）
+    const now = new Date();
+    const fyName = now.getFullYear() + "年" + String(now.getMonth()+1).padStart(2,"0") + "月期";
+
+    // 確認
+    if(!confirm(coName + " の当期を " + fyName + " として確定しますか？\n当期データは前期として保存されます。")) return;
+
+    try {
+      // Firebaseのcompat SDKを使用
+      const db = firebase.firestore();
+      const batch = db.batch();
+      const snap = await db.collection("companies").doc(currentCompany).collection("journals").get();
+
+      // 当期（current）のデータを指定した期名に更新
+      snap.docs.forEach(d => {
+        const data = d.data();
+        if(!data.fy || data.fy === "current") {
+          batch.update(d.ref, {fy: fyName});
+        }
+      });
+      await batch.commit();
+
+      // currentFYをリセット（新しい当期へ）
+      currentFY = "";
+      notify("✅ 決算確定！ " + fyName + " として保存しました。新しい期を開始します。");
+
+      // データを再読み込み
+      await loadJournals();
+      renderList(); stats();
+
+      // 期切替UIを更新
+      await updateFYSelector();
+
+    } catch(e) {
+      notify("❌ エラー: " + e.message, "error");
+    }
+  };
+
+  // 期切替
+  window.switchFY = async function(fy) {
+    currentFY = fy;
+
+    // fy選択肢のハイライト更新
+    document.querySelectorAll(".fy-btn").forEach(b=>{
+      b.classList.toggle("active", b.dataset.fy === fy);
+    });
+
+    // データを再読み込み
+    await loadJournals();
+    renderList(); stats();
+    notify((fy === "" ? "当期" : fy) + "のデータを表示しています","info");
+  };
+
+  // 期切替UIを更新
+  async function updateFYSelector() {
+    const container = document.getElementById("fy-selector");
+    if(!container) return;
+    const db = firebase.firestore();
+    const snap = await db.collection("companies").doc(currentCompany).collection("journals").get();
+    const fys = new Set();
+    snap.docs.forEach(d => {
+      const fy = d.data().fy;
+      if(fy && fy !== "current") fys.add(fy);
+    });
+    const fyList = [...fys].sort().reverse();
+    container.innerHTML = "";
+    const curBtn = document.createElement("button");
+    curBtn.className = "fy-btn" + (currentFY==="" ? " active" : "");
+    curBtn.textContent = "📅 当期";
+    curBtn.onclick = function(){ window.switchFY(""); };
+    container.appendChild(curBtn);
+    fyList.forEach(function(fy){
+      const btn = document.createElement("button");
+      btn.className = "fy-btn" + (currentFY===fy ? " active" : "");
+      btn.textContent = "📁 " + fy;
+      btn.onclick = function(){ window.switchFY(fy); };
+      container.appendChild(btn);
+    });
+  }
+
   // ===== タブボタン・CSVエクスポートのイベントリスナー =====
   document.querySelectorAll(".tab-btn").forEach(b=>b.addEventListener("click",()=>tabSwitch(b.dataset.tab)));
 
@@ -1569,6 +1677,8 @@ select option{background:#1a2744}.div{border:none;border-top:1px solid rgba(74,1
 .sort-btn:hover:not(.active){background:rgba(255,255,255,.1)}
 .view-btn{padding:9px 18px;border:2px solid rgba(74,143,255,.3);border-radius:10px;background:rgba(255,255,255,.06);color:#9bbde0;font-size:13px;font-weight:800;cursor:pointer;font-family:"M PLUS Rounded 1c",sans-serif;transition:all .15s}
 .view-btn.active{background:rgba(74,143,255,.2);color:#7eb8ff;border-color:#4a8fff}
+.fy-btn{padding:6px 12px;border:2px solid rgba(74,143,255,.3);border-radius:8px;background:rgba(255,255,255,.06);color:#9bbde0;font-size:12px;font-weight:800;cursor:pointer;font-family:"M PLUS Rounded 1c",sans-serif;transition:all .15s}
+.fy-btn.active{background:rgba(74,143,255,.2);color:#7eb8ff;border-color:#4a8fff}
 .view-btn:hover:not(.active){background:rgba(255,255,255,.1)}
 tr.group-header td{background:rgba(74,143,255,.12);padding:12px 14px;border-bottom:none;border-top:2px solid rgba(74,143,255,.3)}
 tr.group-row td{padding:9px 10px;border-bottom:1px solid rgba(74,143,255,.06);color:#c8d8f0}
@@ -1625,6 +1735,8 @@ tr:last-child td{border-bottom:none}tr:hover td{background:rgba(74,143,255,.06)}
       <div id="api-status" style="font-size:12px;margin-top:3px;font-weight:800"></div>
     </div>
     <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px">
+      <div id="fy-selector" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"></div>
+      <button onclick="closeFiscalYear()" title="決算確定" style="padding:8px 14px;border:none;border-radius:10px;background:rgba(255,107,107,.15);color:#ff6b6b;font-size:12px;font-weight:800;cursor:pointer;font-family:&quot;M PLUS Rounded 1c&quot;,sans-serif">🔒 決算確定</button>
       <button class="change-co" id="change-co-btn">🏢 会社を切り替える</button>
       <div style="font-size:11px;color:#7eb8ff;font-family:monospace"><span id="api-key-disp"></span></div>
     </div>
