@@ -1612,7 +1612,7 @@ body{font-family:"M PLUS Rounded 1c",sans-serif;background:linear-gradient(135de
 
 /* ===== メインアプリ ===== */
 #main-app{display:none}
-header{background:linear-gradient(90deg,#1a2744,#2a3f6f);border-bottom:3px solid #4a8fff;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;box-shadow:0 4px 24px rgba(74,143,255,.25);flex-wrap:wrap;gap:8px}
+header{background:linear-gradient(90deg,#1a2744,#2a3f6f);border-bottom:3px solid #4a8fff;padding:14px 20px 8px;display:flex;flex-direction:column;align-items:stretch;position:sticky;top:0;z-index:100;box-shadow:0 4px 24px rgba(74,143,255,.25);gap:0}
 .logo{font-size:18px;font-weight:900;color:#7eb8ff;letter-spacing:2px}
 .logo-sub{font-size:11px;color:#9bbde0;margin-top:2px}
 #company-name-disp{font-size:15px;font-weight:900;margin-top:3px}
@@ -1719,7 +1719,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:rgba(74,143,255,.06)}
 
 <!-- ===== メインアプリ ===== -->
 <div id="main-app">
-  <header id="header-bar" style="flex-direction:column;align-items:stretch;gap:6px">
+  <header id="header-bar">
     <div style="display:flex;justify-content:space-between;align-items:center">
       <div>
         <div class="logo">📒 経費管理システム</div>
