@@ -816,6 +816,15 @@ JSONのみ返答（コードブロック不要）:
     renderList();stats();
   });
 
+  // module内の関数をwindow経由で公開（期切替で使用）
+  window._appRenderList = renderList;
+  window._appStats = stats;
+  window._appJournals = journals;
+  window._appSetJournals = function(data) {
+    journals = data;
+    window._appJournals = journals;
+  };
+
   window.delJournal=delJ;
 
   // ===== 複写機能 =====
@@ -1483,8 +1492,11 @@ JSONのみ返答（コードブロック不要）:
       } else {
         journals = allJ.filter(j=>j.fy===fy);
       }
+      // window経由でも更新
+      if(window._appSetJournals) window._appSetJournals(journals);
     } catch(e) {
       console.error("switchFY load error:", e);
+      journals = [];
     }
     renderList(); stats();
     notify((fy === "" ? "当期" : fy) + "のデータを表示しています（" + journals.length + "件）","info");
