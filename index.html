@@ -454,13 +454,11 @@ JSONのみ返答（コードブロック不要）:
     if(!currentCompany) return;
     try{
       const snap=await getDocs(query(journalCol(),orderBy("createdAt","desc")));
+      // 全件を保持してfyでフィルタリング
       const allJournals=snap.docs.map(d=>({id:d.id,...d.data()}));
-      // 期フィルター
       if(currentFY === "") {
-        // 当期：fy="current" または fyなし
         journals = allJournals.filter(j=>!j.fy || j.fy==="current");
       } else {
-        // 前期等：指定したfyのみ
         journals = allJournals.filter(j=>j.fy===currentFY);
       }
       if(journals.length) notify("✨ 読込完了（"+journals.length+"件）");
@@ -1433,8 +1431,6 @@ JSONのみ返答（コードブロック不要）:
 
   // 利用可能な期一覧を取得
   async function getFYList() {
-    const { getFirestore, collection, getDocs } = await import("https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js").catch(()=>({getFirestore:null}));
-    // compat SDKを使用
     const fys = new Set(journals.map(j=>j.fy||"current"));
     return [...fys].sort();
   }
@@ -1442,59 +1438,37 @@ JSONのみ返答（コードブロック不要）:
   // 決算更新（当期→前期に移行）
   window.closeFiscalYear = async function() {
     if(!journals.length){notify("データがありません","error");return;}
-
     const co = COMPANIES.find(c=>c.id===currentCompany);
     const coName = co?.name||currentCompany;
-
-    // 現在の期名を決定（例：2026年3月期）
     const now = new Date();
     const fyName = now.getFullYear() + "年" + String(now.getMonth()+1).padStart(2,"0") + "月期";
-
-    // 確認
     if(!confirm(coName + " の当期を " + fyName + " として確定しますか？\n当期データは前期として保存されます。")) return;
-
     try {
-      // Firebaseのcompat SDKを使用
-      const db = firebase.firestore();
-      const batch = db.batch();
-      const snap = await db.collection("companies").doc(currentCompany).collection("journals").get();
-
-      // 当期（current）のデータを指定した期名に更新
+      // modular SDKで一括更新
+      const colRef = collection(db,"companies",currentCompany,"journals");
+      const snap = await getDocs(colRef);
+      const promises = [];
       snap.docs.forEach(d => {
         const data = d.data();
         if(!data.fy || data.fy === "current") {
-          batch.update(d.ref, {fy: fyName});
+          promises.push(updateDoc(doc(db,"companies",currentCompany,"journals",d.id), {fy: fyName}));
         }
       });
-      await batch.commit();
-
-      // currentFYをリセット（新しい当期へ）
+      await Promise.all(promises);
       currentFY = "";
       notify("✅ 決算確定！ " + fyName + " として保存しました。新しい期を開始します。");
-
-      // データを再読み込み
-      await loadJournals();
-      renderList(); stats();
-
-      // 期切替UIを更新
       await updateFYSelector();
-
     } catch(e) {
-      notify("❌ エラー: " + e.message, "error");
+      notify("エラー: " + e.message, "error");
     }
   };
 
-  // 期切替
-  window.switchFY = async function(fy) {
+    window.switchFY = function(fy) {
     currentFY = fy;
-
     // fy選択肢のハイライト更新
     document.querySelectorAll(".fy-btn").forEach(b=>{
-      b.classList.toggle("active", b.dataset.fy === fy);
+      b.classList.toggle("active", (b.dataset.fyVal||"") === fy);
     });
-
-    // データを再読み込み
-    await loadJournals();
     renderList(); stats();
     notify((fy === "" ? "当期" : fy) + "のデータを表示しています","info");
   };
@@ -1502,9 +1476,10 @@ JSONのみ返答（コードブロック不要）:
   // 期切替UIを更新
   async function updateFYSelector() {
     const container = document.getElementById("fy-selector");
-    if(!container) return;
-    const db = firebase.firestore();
-    const snap = await db.collection("companies").doc(currentCompany).collection("journals").get();
+    if(!container || !currentCompany) return;
+    // modular SDKでFirestoreから期一覧を取得
+    const colRef = collection(db,"companies",currentCompany,"journals");
+    const snap = await getDocs(colRef);
     const fys = new Set();
     snap.docs.forEach(d => {
       const fy = d.data().fy;
@@ -1512,14 +1487,18 @@ JSONのみ返答（コードブロック不要）:
     });
     const fyList = [...fys].sort().reverse();
     container.innerHTML = "";
+    // 当期ボタン
     const curBtn = document.createElement("button");
     curBtn.className = "fy-btn" + (currentFY==="" ? " active" : "");
+    curBtn.dataset.fyVal = "";
     curBtn.textContent = "📅 当期";
     curBtn.onclick = function(){ window.switchFY(""); };
     container.appendChild(curBtn);
+    // 前期以前
     fyList.forEach(function(fy){
       const btn = document.createElement("button");
       btn.className = "fy-btn" + (currentFY===fy ? " active" : "");
+      btn.dataset.fyVal = fy;
       btn.textContent = "📁 " + fy;
       btn.onclick = function(){ window.switchFY(fy); };
       container.appendChild(btn);
