@@ -1474,9 +1474,20 @@ JSONのみ返答（コードブロック不要）:
     document.querySelectorAll(".fy-btn").forEach(b=>{
       b.classList.toggle("active", (b.dataset.fyVal||"") === fy);
     });
-    // データを再読み込み（fyフィルターを適用して取得）
-    await load();
-    notify((fy === "" ? "当期" : fy) + "のデータを表示しています","info");
+    // Firestoreから直接取得してjournalsを更新
+    try {
+      const snap = await getDocs(query(journalCol(), orderBy("createdAt","desc")));
+      const allJ = snap.docs.map(d=>({id:d.id,...d.data()}));
+      if(fy === "") {
+        journals = allJ.filter(j=>!j.fy || j.fy==="current");
+      } else {
+        journals = allJ.filter(j=>j.fy===fy);
+      }
+    } catch(e) {
+      console.error("switchFY load error:", e);
+    }
+    renderList(); stats();
+    notify((fy === "" ? "当期" : fy) + "のデータを表示しています（" + journals.length + "件）","info");
   };
 
   // 期切替UIを更新
