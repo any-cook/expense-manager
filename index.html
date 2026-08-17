@@ -494,7 +494,7 @@ JSONのみ返答（コードブロック不要）:
       +js.map(j=>`${j.date},${j.dName},${j.tRate??10}%,${j.amount},${j.cName},${j.amount},"${j.desc||""}",${j.inv||"インボイス登録なし"}`).join("\n");
     const a=document.createElement("a");
     a.href=URL.createObjectURL(new Blob([B+c],{type:"text/csv;charset=utf-8;"}));
-    a.download=coName+"_経費仕訳_"+fmt+"_"+new Date().toISOString().slice(0,10)+".csv";
+    a.download=coName+"_経費仕訳_"+fmt+"_"+new Date().toISOString().slice(0,10)+(fmt==="弥生"?".txt":".csv");
     a.click();URL.revokeObjectURL(a.href);
   }
 
