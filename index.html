@@ -2,6 +2,17 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
+<script>
+// 古いService Workerを強制削除してキャッシュをクリア
+if('serviceWorker' in navigator) {
+  navigator.serviceWorker.getRegistrations().then(regs=>{
+    regs.forEach(r=>r.unregister());
+  });
+  caches.keys().then(names=>{
+    names.forEach(n=>caches.delete(n));
+  });
+}
+</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>経費管理システム</title>
 
