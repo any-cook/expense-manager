@@ -456,34 +456,36 @@ JSONのみ返答（コードブロック不要）:
         const drTax   = isSales ? 0 : taxAmt;
         const crTax   = isSales ? taxAmt : 0;
 
-        // 25列：添付ファイルの形式に完全準拠
-        return [
-          q("2000"),          // [0]  識別フラグ
-          voucher,            // [1]  伝票番号（連番）
-          q(""),              // [2]  枝番
-          q(date),            // [3]  伝票日付（令和形式）
-          q(j.dName || ""),   // [4]  借方勘定科目
-          q(""),              // [5]  借方補助科目
-          q(""),              // [6]  借方部門
-          q(drTaxKbn),        // [7]  借方税区分
-          amount,             // [8]  借方金額
-          drTax,              // [9]  借方消費税額
-          q(j.cName || ""),   // [10] 貸方勘定科目
-          q(""),              // [11] 貸方補助科目
-          q(""),              // [12] 貸方部門
-          q(crTaxKbn),        // [13] 貸方税区分
-          amount,             // [14] 貸方金額
-          crTax,              // [15] 貸方消費税額
-          q(desc),            // [16] 摘要
-          q(memo),            // [17] メモ
-          q(""),              // [18] 付箋
-          0,                  // [19] 付箋色
-          q(""),              // [20] 予備1
-          q(""),              // [21] 予備2
-          q("0"),             // [22] 生成元
-          q("0"),             // [23] 修正フラグ
-          q("no")             // [24] 調査
-        ].join(",");
+        // 25列：添付ファイルの列・クォートパターンに完全準拠
+        // クォートあり=文字列, クォートなし=数値（添付ファイルと完全一致）
+        const cols = [
+          q("2000"),          // [0]  識別フラグ          "2000"
+          voucher,            // [1]  伝票番号（連番）     1448（数値）
+          q(""),              // [2]  枝番                ""
+          q(date),            // [3]  伝票日付            "R.07/11/01"
+          q(j.dName || ""),   // [4]  借方勘定科目        "旅費交通費"
+          q(""),              // [5]  借方補助科目        ""
+          q(""),              // [6]  借方部門            ""
+          q(drTaxKbn),        // [7]  借方税区分          "課対仕入内10%適格"
+          amount,             // [8]  借方金額            400（数値）
+          drTax,              // [9]  借方消費税額        36（数値）
+          q(j.cName || ""),   // [10] 貸方勘定科目        "仮払金"
+          q(""),              // [11] 貸方補助科目        ""
+          q(""),              // [12] 貸方部門            ""
+          q(crTaxKbn),        // [13] 貸方税区分          "対象外"
+          amount,             // [14] 貸方金額            400（数値）
+          crTax,              // [15] 貸方消費税額        0（数値）
+          q(desc),            // [16] 摘要               "駐車場代..."
+          q(""),              // [17] メモ               ""
+          q(""),              // [18] 付箋               ""
+          0,                  // [19] 付箋色              0（数値）
+          q(""),              // [20] 予備1              ""
+          q(""),              // [21] 予備2              ""
+          q("0"),             // [22] 生成元              "0"
+          q("0"),             // [23] 修正フラグ          "0"
+          q("no")             // [24] 調査               "no"
+        ];
+        return cols.join(",");
       });
 
       c = yayoiRows.join("\n");
@@ -493,7 +495,14 @@ JSONのみ返答（コードブロック不要）:
     else if(fmt==="MF") c="取引日,借方勘定科目,借方税区分,借方金額,貸方勘定科目,貸方金額,摘要,インボイス番号\n"
       +js.map(j=>`${j.date},${j.dName},${j.tRate??10}%,${j.amount},${j.cName},${j.amount},"${j.desc||""}",${j.inv||"インボイス登録なし"}`).join("\n");
     const a=document.createElement("a");
-    a.href=URL.createObjectURL(new Blob([B+c],{type:"text/csv;charset=utf-8;"}));
+    let dlBlob;
+    if(fmt==="弥生") {
+      // 弥生会計：BOMなし・UTF-8（弥生側で文字コード自動判定）
+      dlBlob = new Blob([c], {type:"text/plain;charset=utf-8;"});
+    } else {
+      dlBlob = new Blob([B+c], {type:"text/csv;charset=utf-8;"});
+    }
+    a.href=URL.createObjectURL(dlBlob);
     a.download=coName+"_経費仕訳_"+fmt+"_"+new Date().toISOString().slice(0,10)+(fmt==="弥生"?".txt":".csv");
     a.click();URL.revokeObjectURL(a.href);
   }
