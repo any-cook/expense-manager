@@ -15,6 +15,7 @@ if('serviceWorker' in navigator) {
 </script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>経費管理システム</title>
+<meta name="app-version" content="2.1.0">
 
 <!-- アイコン・PWA設定 -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
@@ -303,10 +304,25 @@ if('serviceWorker' in navigator) {
         await new Promise(r=>setTimeout(r,3000*(retry+1)));
         return callGemini(parts,retry+1);
       }
+      throw new Error("Gemini APIが混雑しています。しばらく時間をおいてから再試行してください。");
     }
     if(!res.ok) {
       const e=await res.json().catch(()=>({}));
-      throw new Error(e?.error?.message||"APIエラー("+res.status+")");
+      let msg=e?.error?.message||"APIエラー("+res.status+")";
+      // 英語エラーを日本語に変換
+      const ERR_MAP=[
+        [/high demand/i,"現在Gemini APIが混雑しています。しばらく待ってから再試行してください。"],
+        [/quota/i,"APIの利用制限（クォータ）に達しました。しばらく時間をおいてください。"],
+        [/API.?key/i,"APIキーが無効です。正しいGemini APIキーを設定してください。"],
+        [/invalid/i,"APIリクエストが無効です。入力内容を確認してください。"],
+        [/permission/i,"APIキーにアクセス権限がありません。Google AI Studioで権限を確認してください。"],
+        [/not found/i,"指定したモデルが見つかりません。APIキーを確認してください。"],
+        [/timeout|timed out/i,"APIリクエストがタイムアウトしました。再試行してください。"],
+        [/safety/i,"安全フィルターによりリクエストが拒否されました。"],
+        [/billing/i,"請求先アカウントが設定されていません。Google AI Studioを確認してください。"],
+      ];
+      for(const [re,ja] of ERR_MAP){if(re.test(msg)){msg=ja;break;}}
+      throw new Error(msg);
     }
     const data=await res.json();
     return data.candidates?.[0]?.content?.parts?.[0]?.text||"";
@@ -411,9 +427,26 @@ JSONのみ返答（コードブロック不要）:
   // ===== UI =====
   function setProgress(msg,pct){document.getElementById("pw").style.display="block";document.getElementById("pt").textContent=msg;document.getElementById("pf").style.width=pct+"%";}
   function hideProgress(){document.getElementById("pw").style.display="none";document.getElementById("pf").style.width="0%";}
-  function notify(msg,type="success"){const el=document.getElementById("notify");el.innerHTML=msg;el.className="notify show "+type;clearTimeout(el._t);el._t=setTimeout(()=>el.classList.remove("show"),5000);}
+  function notify(msg,type="success"){const el=document.getElementById("notify");el.innerHTML=msg;el.className="notify show "+type;clearTimeout(el._t);const dur=type==="error"?8000:5000;el._t=setTimeout(()=>el.classList.remove("show"),dur);}
   function $v(id){return document.getElementById(id).value;}
   function $s(id,v){document.getElementById(id).value=v;}
+  function toggleKeepForm(){
+    const cb=document.getElementById("keep-form");
+    cb.checked=!cb.checked;
+    const btn=document.getElementById("keep-form-btn");
+    const icon=document.getElementById("keep-form-icon");
+    if(cb.checked){
+      btn.style.background="rgba(74,143,255,.2)";
+      btn.style.borderColor="#4a8fff";
+      btn.style.color="#7eb8ff";
+      icon.textContent="✅";
+    }else{
+      btn.style.background="rgba(74,143,255,.06)";
+      btn.style.borderColor="rgba(74,143,255,.25)";
+      btn.style.color="#9bbde0";
+      icon.textContent="🔲";
+    }
+  }
 
   // ===== CSV =====
   function doCSV(js,fmt,coName) {
@@ -500,7 +533,7 @@ JSONのみ返答（コードブロック不要）:
         return cols.join(",");
       });
 
-      c = yayoiRows.join("\n");
+      c = yayoiRows.join("\r\n");
     }
     else if(fmt==="freee") c="発生日,勘定科目,取引先,金額（円）,税区分,備考,インボイス番号\n"
       +js.map(j=>`${j.date},${j.dName},"${j.payee||""}",${j.amount},課税仕入(${j.tRate??10}%),"${j.desc||""}",${j.inv||"インボイス登録なし"}`).join("\n");
@@ -509,14 +542,60 @@ JSONのみ返答（コードブロック不要）:
     const a=document.createElement("a");
     let dlBlob;
     if(fmt==="弥生") {
-      // 弥生会計：BOMなし・UTF-8（弥生側で文字コード自動判定）
-      dlBlob = new Blob([c], {type:"text/plain;charset=utf-8;"});
+      // 弥生会計：Shift-JIS（CP932）エンコード・BOMなし
+      dlBlob = toShiftJIS(c);
     } else {
       dlBlob = new Blob([B+c], {type:"text/csv;charset=utf-8;"});
     }
     a.href=URL.createObjectURL(dlBlob);
     a.download=coName+"_経費仕訳_"+fmt+"_"+new Date().toISOString().slice(0,10)+(fmt==="弥生"?".txt":".csv");
     a.click();URL.revokeObjectURL(a.href);
+  }
+
+  // ===== Shift-JIS変換（弥生会計用）=====
+  function toShiftJIS(str) {
+    // TextEncoderはShift-JIS非対応のため、Blobを使ってUTF-8で出してからSJIS変換
+    // （ブラウザAPIでShift-JIS変換する標準手段）
+    const SJIS_MAP = buildSJISMap();
+    const bytes = [];
+    for(let i=0;i<str.length;i++){
+      const code = str.charCodeAt(i);
+      if(code < 0x80){
+        bytes.push(code);
+      } else if(SJIS_MAP[code]!==undefined){
+        const s=SJIS_MAP[code];
+        if(s>0xFF) {bytes.push((s>>8)&0xFF);bytes.push(s&0xFF);}
+        else bytes.push(s);
+      } else {
+        bytes.push(0x3F); // '?' — 変換不能文字
+      }
+    }
+    return new Blob([new Uint8Array(bytes)],{type:"text/plain;charset=Shift_JIS"});
+  }
+
+  function buildSJISMap(){
+    // TextDecoderを使ってShift-JISのコードポイント→Unicodeマッピングを動的生成（逆引き）
+    const map={};
+    const decoder=new TextDecoder("shift-jis",{fatal:false});
+    // ASCII範囲は不要（直接出力）
+    // 1バイト半角カタカナ (0xA1-0xDF)
+    for(let b=0xA1;b<=0xDF;b++){
+      const ch=decoder.decode(new Uint8Array([b]));
+      if(ch&&ch!=="�") map[ch.charCodeAt(0)]=b;
+    }
+    // 2バイト文字（1バイト目: 0x81-0x9F, 0xE0-0xEF）
+    for(let b1=0x81;b1<=0xEF;b1++){
+      if(b1>=0xA0&&b1<=0xDF) continue;
+      for(let b2=0x40;b2<=0xFC;b2++){
+        if(b2===0x7F) continue;
+        const ch=decoder.decode(new Uint8Array([b1,b2]));
+        if(ch&&ch!=="�"&&ch.length===1){
+          const u=ch.charCodeAt(0);
+          if(!map[u]) map[u]=(b1<<8)|b2;
+        }
+      }
+    }
+    return map;
   }
 
   // ===== Firebase =====
@@ -1044,6 +1123,8 @@ JSONのみ返答（コードブロック不要）:
         document.getElementById("ai-cr").textContent=r.creditName||"-";
         document.getElementById("ai-cf").textContent=Math.round((r.confidence||0)*100)+"%";
         notify("✨ レシートの読み取り完了！内容を確認して「登録する」を押してください。");
+        // フォームへ自動スクロール
+        setTimeout(()=>{document.getElementById("journal-form").scrollIntoView({behavior:"smooth",block:"start"});},300);
       }catch(e){hideProgress();notify("❌ "+e.message,"error");console.error(e);}
     };
     reader.onerror=()=>notify("❌ ファイルを読み込めませんでした","error");
@@ -1750,8 +1831,8 @@ header{background:linear-gradient(90deg,#1a2744,#2a3f6f);border-bottom:3px solid
 .drop-zone:hover,.drop-zone.dov{border-color:#4a8fff;background:rgba(74,143,255,.12);transform:scale(1.01)}
 .drop-zone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
 .dz-icon{font-size:44px;margin-bottom:10px;display:block}.dz-text{font-size:16px;font-weight:800;color:#7eb8ff;margin-bottom:6px}.dz-sub{font-size:13px;color:#9bbde0}
-.rec-prev{margin-top:12px;border-radius:12px;overflow:hidden;border:2px solid rgba(74,143,255,.3);display:none}
-.rec-prev img{width:100%;max-height:220px;object-fit:contain;background:#0a0f1e}
+.rec-prev{margin-top:12px;border-radius:12px;overflow:hidden;border:2px solid rgba(74,143,255,.5);display:none;box-shadow:0 4px 20px rgba(74,143,255,.2)}
+.rec-prev img{width:100%;max-height:380px;object-fit:contain;background:#f0f4ff}
 .fg{display:grid;grid-template-columns:1fr 1fr;gap:14px}.fg3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
 @media(max-width:600px){.fg,.fg3{grid-template-columns:1fr}}.ff{grid-column:1/-1}
 label{display:flex;flex-direction:column;gap:6px;font-size:13px;color:#9bbde0;font-weight:800}.req::after{content:" ✳";color:#ff7eb8;font-size:11px}
@@ -1810,7 +1891,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:rgba(74,143,255,.06)}
 .fc{background:rgba(0,10,30,.4);border-radius:14px;padding:16px;border:1px solid rgba(74,143,255,.15)}
 .fn{font-size:14px;font-weight:900;color:#7eb8ff;margin-bottom:4px}.fd{font-size:12px;color:#9bbde0}
 .er{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.er select{flex:1;min-width:200px}
-.notify{position:fixed;top:16px;right:16px;padding:14px 22px;border-radius:14px;font-weight:800;font-size:14px;font-family:"M PLUS Rounded 1c",sans-serif;z-index:9999;opacity:0;transform:translateY(-12px);transition:all .3s cubic-bezier(.34,1.56,.64,1);pointer-events:none;max-width:340px;box-shadow:0 8px 32px rgba(0,0,0,.4);line-height:1.5}
+.notify{position:fixed;top:16px;right:16px;padding:14px 22px;border-radius:14px;font-weight:800;font-size:14px;font-family:"M PLUS Rounded 1c",sans-serif;z-index:9999;opacity:0;transform:translateY(-12px);transition:all .3s cubic-bezier(.34,1.56,.64,1);pointer-events:none;max-width:420px;box-shadow:0 8px 32px rgba(0,0,0,.4);line-height:1.6;word-break:break-word}
 .notify.show{opacity:1;transform:none}.notify.success{background:linear-gradient(135deg,#26de81,#20bf6b);color:#fff}
 .notify.error{background:linear-gradient(135deg,#ff6b6b,#ee5a24);color:#fff}.notify.info{background:linear-gradient(135deg,#4a8fff,#2d6dd9);color:#fff}
 ::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-thumb{background:#4a8fff;border-radius:3px}
@@ -1942,12 +2023,13 @@ tr:last-child td{border-bottom:none}tr:hover td{background:rgba(74,143,255,.06)}
           <label class="req">借方科目<select id="f-dr" required></select></label>
           <label class="req">貸方科目<select id="f-cr" required></select></label>
         </div>
-        <!-- 連続登録チェック -->
-        <div style="display:flex;align-items:center;gap:10px;margin-top:14px;padding:12px 14px;background:rgba(74,143,255,.08);border-radius:12px;border:1px solid rgba(74,143,255,.2)">
-          <input type="checkbox" id="keep-form" style="width:20px;height:20px;cursor:pointer;accent-color:#4a8fff;border-radius:6px">
-          <label for="keep-form" style="font-size:14px;color:#9bbde0;font-weight:700;cursor:pointer;margin:0;flex-direction:row;gap:0">
-            同じ取引を続けて登録する（金額以外の項目を保持）
-          </label>
+        <!-- 連続登録トグル -->
+        <div style="display:flex;align-items:center;gap:10px;margin-top:14px">
+          <input type="checkbox" id="keep-form" style="display:none">
+          <button type="button" id="keep-form-btn" onclick="toggleKeepForm()" style="display:flex;align-items:center;gap:10px;padding:12px 20px;border-radius:14px;border:2px solid rgba(74,143,255,.25);background:rgba(74,143,255,.06);color:#9bbde0;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit;transition:all .2s;width:100%">
+            <span id="keep-form-icon" style="font-size:20px">🔲</span>
+            <span id="keep-form-lbl">連続登録モード　　（ONにすると金額以外の項目を保持して続けて登録できます）</span>
+          </button>
         </div>
 
         <div style="display:flex;gap:12px;margin-top:12px;align-items:center">
