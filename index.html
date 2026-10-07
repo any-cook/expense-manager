@@ -1877,7 +1877,10 @@ tr.group-row:hover td{background:rgba(74,143,255,.06)}
 @media(max-width:500px){.sg{grid-template-columns:1fr 1fr}}
 .sb{background:rgba(255,255,255,.05);border-radius:14px;padding:16px 18px;border:1px solid rgba(74,143,255,.15)}
 .sl{font-size:12px;color:#9bbde0;font-weight:800;margin-bottom:6px}.sv{font-size:20px;font-weight:900}
-.tw{overflow-x:auto;border-radius:14px;border:1px solid rgba(74,143,255,.15)}
+.tw{border-radius:14px;border:1px solid rgba(74,143,255,.15);overflow:hidden}
+.tw-scroll{overflow-x:auto;overflow-y:auto;max-height:calc(100vh - 420px);min-height:200px}
+.tw-scroll table{min-width:900px}
+.tw-scroll thead th{position:sticky;top:0;z-index:10;background:#1a2a4a;box-shadow:0 2px 4px rgba(0,0,0,.3)}
 table{width:100%;border-collapse:collapse;font-size:13px}
 th{padding:12px 10px;text-align:left;background:rgba(74,143,255,.12);color:#9bbde0;font-size:11px;font-weight:800;white-space:nowrap}
 td{padding:11px 10px;border-bottom:1px solid rgba(74,143,255,.08);color:#c8d8f0;vertical-align:middle}
@@ -2105,8 +2108,10 @@ tr:last-child td{border-bottom:none}tr:hover td{background:rgba(74,143,255,.06)}
       <div class="sb"><div class="sl">🟠 8%（軽減税率）</div><div class="sv s8" style="color:#fd9644;font-size:15px">¥0</div></div>
     </div>
     <div class="tw">
-      <table><thead id="list-thead"><tr><th>分類</th><th>インボイス番号</th><th>日付</th><th>取引手段</th><th>取引先</th><th>摘要</th><th>品目</th><th>借方科目</th><th>貸方科目</th><th style="text-align:right">税込金額</th><th style="text-align:right">税率/税額</th><th>操作</th></tr></thead>
-      <tbody id="tbody"></tbody></table>
+      <div class="tw-scroll">
+        <table><thead id="list-thead"><tr><th>分類</th><th>インボイス番号</th><th>日付</th><th>取引手段</th><th>取引先</th><th>摘要</th><th>品目</th><th>借方科目</th><th>貸方科目</th><th style="text-align:right">税込金額</th><th style="text-align:right">税率/税額</th><th>操作</th></tr></thead>
+        <tbody id="tbody"></tbody></table>
+      </div>
     </div>
   </div>
 
