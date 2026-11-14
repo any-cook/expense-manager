@@ -15,7 +15,7 @@ if('serviceWorker' in navigator) {
 </script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>経費管理システム</title>
-<meta name="app-version" content="2.1.0">
+<meta name="app-version" content="2.2.0">
 
 <!-- アイコン・PWA設定 -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
@@ -320,6 +320,10 @@ if('serviceWorker' in navigator) {
         [/timeout|timed out/i,"APIリクエストがタイムアウトしました。再試行してください。"],
         [/safety/i,"安全フィルターによりリクエストが拒否されました。"],
         [/billing/i,"請求先アカウントが設定されていません。Google AI Studioを確認してください。"],
+        [/prepayment|credits.*deplet|deplet.*credits/i,"Gemini APIのプリペイドクレジットが不足しています。Google AI Studioで残高を確認してください。"],
+        [/no longer available|deprecated.*model|model.*deprecated/i,"このGeminiモデルは現在利用できません。管理者にお問い合わせください。"],
+        [/resource.*exhaust/i,"APIのリソースが枯渇しています。しばらく時間をおいてから再試行してください。"],
+        [/model.*not.*support|unsupported.*model/i,"指定したモデルはサポートされていません。管理者にお問い合わせください。"],
       ];
       for(const [re,ja] of ERR_MAP){if(re.test(msg)){msg=ja;break;}}
       throw new Error(msg);
@@ -430,7 +434,7 @@ JSONのみ返答（コードブロック不要）:
   function notify(msg,type="success"){const el=document.getElementById("notify");el.innerHTML=msg;el.className="notify show "+type;clearTimeout(el._t);const dur=type==="error"?8000:5000;el._t=setTimeout(()=>el.classList.remove("show"),dur);}
   function $v(id){return document.getElementById(id).value;}
   function $s(id,v){document.getElementById(id).value=v;}
-  function toggleKeepForm(){
+  window.toggleKeepForm = function toggleKeepForm(){
     const cb=document.getElementById("keep-form");
     cb.checked=!cb.checked;
     const btn=document.getElementById("keep-form-btn");
