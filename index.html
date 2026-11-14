@@ -15,7 +15,7 @@ if('serviceWorker' in navigator) {
 </script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>経費管理システム</title>
-<meta name="app-version" content="2.3.0">
+<meta name="app-version" content="2.3.1">
 
 <!-- アイコン・PWA設定 -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
@@ -1051,7 +1051,12 @@ JSONのみ返答（コードブロック不要）:
     tabSwitch("input");window.scrollTo(0,0);
   };
   window.cancelEdit=function(){
+    // reset()はcheckboxも含めてリセットしてしまうため、先に連続登録状態を退避
+    const keepChecked = document.getElementById("keep-form")?.checked || false;
     editId=null;document.getElementById("journal-form").reset();
+    // reset()後にkeep-formの状態を復元（連続登録モードをリセットしない）
+    const cb = document.getElementById("keep-form");
+    if(cb) cb.checked = keepChecked;
     $s("f-date",new Date().toISOString().slice(0,10));
     $s("f-inv","");$s("f-tr",10);$s("f-tx",0);$s("f-payment","");
     window.setTxnType("expense");
