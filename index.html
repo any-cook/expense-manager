@@ -15,7 +15,7 @@ if('serviceWorker' in navigator) {
 </script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>経費管理システム</title>
-<meta name="app-version" content="2.2.0">
+<meta name="app-version" content="2.3.0">
 
 <!-- アイコン・PWA設定 -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
@@ -54,7 +54,11 @@ if('serviceWorker' in navigator) {
   ];
 
   // ===== 現在選択中の会社 =====
-  let currentCompany = localStorage.getItem("keihi_company") || "";
+  // URLパラメータ ?c=anycook / ?c=armable / ?c=santa で会社を直接指定できる
+  const _urlParam = new URLSearchParams(location.search).get("c") || "";
+  let currentCompany = (_urlParam && COMPANIES.find(c=>c.id===_urlParam))
+    ? _urlParam
+    : (localStorage.getItem("keihi_company") || "");
 
   function setCompany(id) {
     currentCompany = id;
@@ -72,13 +76,26 @@ if('serviceWorker' in navigator) {
     currentFY = "";
     load();
     setTimeout(updateFYSelector, 2000);
+    checkKey();
   }
 
   function showCompanyScreen() {
     document.getElementById("company-screen").style.display = "flex";
     document.getElementById("main-app").style.display = "none";
+    // 前回選択したカードをハイライト（切替画面でわかりやすくする）
+    const prevId = localStorage.getItem("keihi_company") || currentCompany;
+    document.querySelectorAll(".co-card").forEach(card => {
+      const name = card.querySelector(".co-name")?.textContent;
+      const co = COMPANIES.find(c=>c.name===name);
+      if(co && co.id===prevId) {
+        card.style.boxShadow = `0 0 0 3px ${co.color}, 0 12px 40px rgba(0,0,0,.4)`;
+        card.querySelector(".co-btn").textContent = "✅ 前回選択（クリックで入る）";
+      } else {
+        card.style.boxShadow = "";
+        if(card.querySelector(".co-btn")) card.querySelector(".co-btn").textContent = "選択する →";
+      }
+    });
     currentCompany = "";
-    localStorage.removeItem("keihi_company");
   }
 
   // ===== APIキー =====
@@ -1769,20 +1786,12 @@ JSONのみ返答（コードブロック不要）:
     grid.appendChild(card);
   });
 
-  // 起動時は常に会社選択画面を表示（前回の選択はハイライト表示）
-  showCompanyScreen();
-  // 前回選択した会社のカードをハイライト
-  if(currentCompany) {
-    const cards = document.querySelectorAll(".co-card");
-    const co = COMPANIES.find(c=>c.id===currentCompany);
-    if(co) {
-      cards.forEach(card=>{
-        if(card.querySelector(".co-name")?.textContent===co.name) {
-          card.style.boxShadow = `0 0 0 3px ${co.color}, 0 12px 40px rgba(0,0,0,.4)`;
-          card.querySelector(".co-btn").textContent = "✅ 前回選択（クリックで入る）";
-        }
-      });
-    }
+  // 起動時：会社が確定していれば選択画面をスキップして直接入る
+  // （URLパラメータ ?c=xxx 優先、次に localStorage の前回選択）
+  if(currentCompany && COMPANIES.find(c=>c.id===currentCompany)) {
+    setCompany(currentCompany);
+  } else {
+    showCompanyScreen();
   }
 
   // 会社切替ボタン
@@ -1912,6 +1921,12 @@ tr:last-child td{border-bottom:none}tr:hover td{background:rgba(74,143,255,.06)}
   <div class="co-title">📒 経費管理システム</div>
   <div class="co-subtitle">会社を選択してください</div>
   <div id="company-grid"></div>
+  <div style="margin-top:32px;font-size:12px;color:#4a6a8a;text-align:center;line-height:2">
+    🔖 ブックマーク用URL（会社カードを選ぶと次回から自動で入ります）<br>
+    <span style="font-family:monospace;color:#3a5a7a">?c=anycook</span> ／
+    <span style="font-family:monospace;color:#3a5a7a">?c=armable</span> ／
+    <span style="font-family:monospace;color:#3a5a7a">?c=santa</span>
+  </div>
 </div>
 
 <!-- ===== メインアプリ ===== -->
