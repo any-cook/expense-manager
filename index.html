@@ -15,7 +15,7 @@ if('serviceWorker' in navigator) {
 </script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>経費管理システム</title>
-<meta name="app-version" content="2.3.5">
+<meta name="app-version" content="2.3.6">
 
 <!-- アイコン・PWA設定 -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
@@ -1115,7 +1115,7 @@ JSONのみ返答（コードブロック不要）:
     hideProgress();
   };
 
-  document.getElementById("f-amount").addEventListener("input",()=>{const a=parseInt($v("f-amount"))||0,r=parseInt($v("f-tr"))||10;$s("f-tx",tax(a,r));});
+  document.getElementById("f-amount").addEventListener("input",()=>{const a=parseInt($v("f-amount"))||0,r=parseInt($v("f-tr"));$s("f-tx",tax(a,isNaN(r)?10:r));});
 
   // 取引手段変更時に借方・貸方を自動反映
   document.getElementById("f-payment").addEventListener("change",function(){
@@ -1150,7 +1150,7 @@ JSONのみ返答（コードブロック不要）:
       notify("💡 "+lbl+"は非課税（0%）に自動設定しました","info");
     }
   });
-  document.getElementById("f-tr").addEventListener("change",()=>{const a=parseInt($v("f-amount"))||0,r=parseInt($v("f-tr"))||10;$s("f-tx",tax(a,r));});
+  document.getElementById("f-tr").addEventListener("change",()=>{const a=parseInt($v("f-amount"))||0,r=parseInt($v("f-tr"));$s("f-tx",tax(a,isNaN(r)?10:r));});
 
   // APIキー保存
   document.getElementById("save-key-btn").addEventListener("click",()=>{
