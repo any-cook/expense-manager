@@ -15,7 +15,7 @@ if('serviceWorker' in navigator) {
 </script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>経費管理システム</title>
-<meta name="app-version" content="2.3.2">
+<meta name="app-version" content="2.3.3">
 
 <!-- アイコン・PWA設定 -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
@@ -1799,8 +1799,6 @@ JSONのみ返答（コードブロック不要）:
     showCompanyScreen();
   }
 
-  // 会社切替ボタン
-  document.getElementById("change-co-btn").addEventListener("click",showCompanyScreen);
   checkKey();
 </script>
 <style>
@@ -1946,7 +1944,6 @@ tr:last-child td{border-bottom:none}tr:hover td{background:rgba(74,143,255,.06)}
       </div>
       <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px">
         <button onclick="closeFiscalYear()" title="決算確定" style="padding:8px 14px;border:none;border-radius:10px;background:rgba(255,107,107,.15);color:#ff6b6b;font-size:12px;font-weight:800;cursor:pointer;font-family:&quot;M PLUS Rounded 1c&quot;,sans-serif">🔒 決算確定</button>
-        <button class="change-co" id="change-co-btn">🏢 会社を切り替える</button>
         <div style="font-size:11px;color:#7eb8ff;font-family:monospace"><span id="api-key-disp"></span></div>
       </div>
     </div>
