@@ -15,7 +15,7 @@ if('serviceWorker' in navigator) {
 </script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>経費管理システム</title>
-<meta name="app-version" content="2.3.3">
+<meta name="app-version" content="2.3.4">
 
 <!-- アイコン・PWA設定 -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
@@ -66,8 +66,23 @@ if('serviceWorker' in navigator) {
     const co = COMPANIES.find(c=>c.id===id);
     // ヘッダー色変更
     document.getElementById("header-bar").style.borderBottomColor = co.color;
-    document.getElementById("company-name-disp").textContent = co.name;
-    document.getElementById("company-name-disp").style.color = co.color;
+    const nameDisp = document.getElementById("company-name-disp");
+    nameDisp.textContent = co.name;
+    nameDisp.style.color = co.color;
+    // 3回タップで会社切り替え
+    nameDisp._tapCount = 0;
+    nameDisp._tapTimer = null;
+    nameDisp.onclick = function(){
+      nameDisp._tapCount = (nameDisp._tapCount||0) + 1;
+      clearTimeout(nameDisp._tapTimer);
+      if(nameDisp._tapCount >= 3){
+        nameDisp._tapCount = 0;
+        showCompanyScreen();
+      } else {
+        nameDisp._tapTimer = setTimeout(()=>{ nameDisp._tapCount=0; }, 800);
+      }
+    };
+    nameDisp.title = "3回タップで会社を切り替え";
     document.querySelectorAll(".tab-btn.active").forEach(b=>{b.style.borderBottomColor=co.color;b.style.color=co.color;});
     // 会社選択画面を隠す
     document.getElementById("company-screen").style.display = "none";
@@ -1944,7 +1959,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:rgba(74,143,255,.06)}
       </div>
       <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px">
         <button onclick="closeFiscalYear()" title="決算確定" style="padding:8px 14px;border:none;border-radius:10px;background:rgba(255,107,107,.15);color:#ff6b6b;font-size:12px;font-weight:800;cursor:pointer;font-family:&quot;M PLUS Rounded 1c&quot;,sans-serif">🔒 決算確定</button>
-        <div style="font-size:11px;color:#7eb8ff;font-family:monospace"><span id="api-key-disp"></span></div>
+        <span id="api-key-disp" style="display:none"></span>
       </div>
     </div>
     <!-- 期切替ボタン（幅全体を使って表示）-->
