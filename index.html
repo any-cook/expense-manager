@@ -15,7 +15,7 @@ if('serviceWorker' in navigator) {
 </script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>経費管理システム</title>
-<meta name="app-version" content="2.3.6">
+<meta name="app-version" content="2.3.7">
 
 <!-- アイコン・PWA設定 -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
@@ -181,7 +181,7 @@ if('serviceWorker' in navigator) {
     {kw:["法定福利費","社会保険料","健康保険","厚生年金","雇用保険","労災","労働保険","介護保険"],d:"6504",c:"1001",r:0},
   ];
   // 非課税科目コードセット
-  const NON_TAX_SET = new Set(["6401","1700","1701","6001","2201","1301","2301","2401","3001","6504","4101","1801","2501","4002","1601","6999"]);
+  const NON_TAX_SET = new Set(["6401","1700","1701","6001","2201","1301","2301","2401","3001","6504","4101","1801","2501","4002","1601","6999","6207"]);
 
   // 取引区分ごとのデフォルト借方・貸方設定
   const TXN_TYPE = {
@@ -1145,7 +1145,7 @@ JSONのみ返答（コードブロック不要）:
     const NON_CHECK=["租税","公課","給与","給料","賞与","役員貸付","役員借入"];
     if(NON_TAX_SET.has(dc)||NON_CHECK.some(w=>accN.includes(w))){
       $s("f-tr",0);$s("f-tx",0);
-      const NON_TAX_LBLS = {"6401":"租税公課（収入印紙・証紙など）","6001":"給与手当","2201":"役員借入金","1301":"役員貸付金","2301":"短期借入金（返済）","2401":"長期借入金（返済）"};
+      const NON_TAX_LBLS = {"6401":"租税公課（収入印紙・証紙など）","6001":"給与手当","2201":"役員借入金","1301":"役員貸付金","2301":"短期借入金（返済）","2401":"長期借入金（返済）","6207":"保険料"};
       const lbl = NON_TAX_LBLS[dc] || "この科目";
       notify("💡 "+lbl+"は非課税（0%）に自動設定しました","info");
     }
@@ -1244,8 +1244,8 @@ JSONのみ返答（コードブロック不要）:
     $s("f-cr", creditCode);
 
     // 非課税科目リスト（これらは必ず消費税0%）
-    const NON_TAX_CODES = ["6401","1700","1701","6001","2201","1301","2301","2401"];
-    const NON_TAX_NAMES = ["租税","公課","印紙","証紙","非課税","給与","給料","賞与","役員貸付","役員借入","返済金","借入返済","ローン返済"];
+    const NON_TAX_CODES = ["6401","1700","1701","6001","2201","1301","2301","2401","6207"];
+    const NON_TAX_NAMES = ["租税","公課","印紙","証紙","非課税","給与","給料","賞与","役員貸付","役員借入","返済金","借入返済","ローン返済","共済","保険料"];
     const judgeText2 = (desc+" "+item).trim();
     const isNonTax = NON_TAX_CODES.includes(debitCode)
       || NON_TAX_SET.has(debitCode)
